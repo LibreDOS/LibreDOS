@@ -47,11 +47,11 @@ trampoline:
     xor esp, esp
 
     xor ax, ax
+    mov fs, ax
+    mov gs, ax
     not ax
     mov ds, ax
     mov es, ax
-    mov fs, ax
-    mov gs, ax
     mov ss, ax
     mov sp, 0xfff0
 

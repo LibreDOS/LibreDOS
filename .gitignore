@@ -1,5 +1,6 @@
 /*.tar.bz2
 /*.tar.gz
+/*.img
 /libredos.iso
 /iso/boot/kernel.bin
 /kernel/**/*.o
