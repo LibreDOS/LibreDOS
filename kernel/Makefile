@@ -8,7 +8,7 @@ ASM_FILES = $(shell find ./src -type f -name '*.asm')
 STARTUP_FILES = $(shell find ./startup -type f -name '*.asm')
 OBJ = $(STARTUP_FILES:.asm=.o) $(C_FILES:.c=.o) $(ASM_FILES:.asm=.o)
 
-CHARDFLAGS = -ansi
+CHARDFLAGS = -ansi -I./include/
 LDHARDFLAGS = -d -T0x0010
 CFLAGS = 
 LDFLAGS = 
