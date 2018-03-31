@@ -1,0 +1,7 @@
+/*.tar.bz2
+/*.tar.gz
+/libredos.iso
+/iso/boot/kernel.bin
+/kernel/**/*.o
+/bochsout.txt
+/bx_enh_dbg.ini
