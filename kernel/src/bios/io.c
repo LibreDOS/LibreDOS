@@ -23,11 +23,13 @@ void bios_puts(char *str) {
     return;
 }
 
-void bios_getchar() {
+int bios_getchar(void) {
 #asm
-	mov ah, 0
-	int #$16
-	mov al, ah
-	xor ah, ah
+    xor ax, ax
+    int #$16
+    mov ah, #$0e
+    int #$10
+    mov al, ah
+    xor ah, ah
 #endasm
 }

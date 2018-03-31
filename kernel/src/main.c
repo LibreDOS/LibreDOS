@@ -3,5 +3,6 @@
 void kmain(void) {
     bios_puts("Welcome to LibreDOS!");
 
-    for (;;);
+    for (;;)
+        bios_getchar();
 }
