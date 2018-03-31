@@ -1,6 +1,8 @@
 extern __edata
 extern __end
 
+extern _kmain
+
 global _main
 
 section .text
@@ -26,16 +28,23 @@ _main:
 
 bits 16
   .realmode:
-    mov ax, 0xb800
-    mov es, ax
-    mov byte [es:0x0000], 'a'
-    jmp $
+    sti
+    call _kmain
 
 bits 16
 trampoline:
     mov eax, cr0
     and al, 0xfe
     mov cr0, eax
+
+    xor eax, eax
+    xor ebx, ebx
+    xor ecx, ecx
+    xor edx, edx
+    xor esi, esi
+    xor edi, edi
+    xor ebp, ebp
+    xor esp, esp
 
     xor ax, ax
     not ax
