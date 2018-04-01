@@ -68,42 +68,42 @@ int bios_load_sector(int drive, unsigned int seg,
 
 int bios_hdd_load_sector(int drive, unsigned int seg, void *buf, int sector) {
 #asm
-	push bp
-	mov dp, sp
-	push bx
-	push cx
-	push dx
-	push es
-	mov ah, #$42
-	mov dl, [bp+4]
-	mov ax, #$10
-	mov [si], ax
-	xor ax, ax
-	mov [si + 1], ax
-	xor ax, ax
-	inc ax
-	mov [si + 2], ax
-	mov ax, [bp + 4]
-	mov [si + 4], ax
-	mov ax, [bp + 2]
-	mov [si + 6], ax
-	mov eax, [bp]
-	mov [si + 8], eax
-	xor eax, eax
-	mov [si + 12], eax
-	int #$13
-	jc failure
+    push bp
+    mov dp, sp
+    push bx
+    push cx
+    push dx
+    push es
+    mov ah, #$42
+    mov dl, [bp+4]
+    mov ax, #$10
+    mov [si], ax
+    xor ax, ax
+    mov [si + 1], ax
+    xor ax, ax
+    inc ax
+    mov [si + 2], ax
+    mov ax, [bp + 4]
+    mov [si + 4], ax
+    mov ax, [bp + 2]
+    mov [si + 6], ax
+    mov eax, [bp]
+    mov [si + 8], eax
+    xor eax, eax
+    mov [si + 12], eax
+    int #$13
+    jc failure
    success:
-   	xor ax, ax
-	jmp exit
+       xor ax, ax
+    jmp exit
    failure:
     xor ax, ax
-	inc ax
+    inc ax
    exit:
     pop es
-	pop dx
-	pop cx
-	pop bx
-	pop bp
+    pop dx
+    pop cx
+    pop bx
+    pop bp
 #endasm
 }
