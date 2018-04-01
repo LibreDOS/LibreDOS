@@ -62,11 +62,11 @@ int bios_load_sector(int drive, unsigned int seg,
     if (drive < 0x80)
         return bios_floppy_load_sector(drive, seg, buf, sector);
     else
-        ;//return bios_hdd_load_sector(drive, seg, buf, sector);
+        return bios_hdd_load_sector(drive, seg, buf, sector);
 
 }
 
-int bios_hdd_load_sector(int drive, void *buf, int sector) {
+int bios_hdd_load_sector(int drive, unsigned int seg, void *buf, int sector) {
 #asm
 	push bp
 	mov dp, sp
@@ -82,13 +82,15 @@ int bios_hdd_load_sector(int drive, void *buf, int sector) {
 	mov [si + 1], ax
 	xor ax, ax
 	inc ax
-	mov word [si + 2], ax
-	mov eax, [bp + 2]
-	mov dword [si + 4], eax
+	mov [si + 2], ax
+	mov ax, [bp + 4]
+	mov [si + 4], ax
+	mov ax, [bp + 2]
+	mov [si + 6], ax
 	mov eax, [bp]
-	mov dword [si + 8], eax
+	mov [si + 8], eax
 	xor eax, eax
-	mov dword [si + 12], eax
+	mov [si + 12], eax
 	int #$13
 	jc failure
    success:
