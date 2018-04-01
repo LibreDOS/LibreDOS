@@ -65,3 +65,43 @@ int bios_load_sector(int drive, unsigned int seg,
         ;//return bios_hdd_load_sector(drive, seg, buf, sector);
 
 }
+
+int bios_hdd_load_sector(int drive, void *buf, int sector) {
+#asm
+	push bp
+	mov dp, sp
+	push bx
+	push cx
+	push dx
+	push es
+	mov ah, #$42
+	mov dl, [bp+4]
+	mov ax, #$10
+	mov [si], ax
+	xor ax, ax
+	mov [si + 1], ax
+	xor ax, ax
+	inc ax
+	mov word [si + 2], ax
+	mov eax, [bp + 2]
+	mov dword [si + 4], eax
+	mov eax, [bp]
+	mov dword [si + 8], eax
+	xor eax, eax
+	mov dword [si + 12], eax
+	int #$13
+	jc failure
+   success:
+   	xor ax, ax
+	jmp exit
+   failure:
+    xor ax, ax
+	inc ax
+   exit:
+    pop es
+	pop dx
+	pop cx
+	pop bx
+	pop bp
+#endasm
+}
