@@ -60,44 +60,47 @@ int bios_floppy_load_sector(int drive, unsigned int seg,
 int bios_hdd_load_sector(int drive, unsigned int seg, void *buf, int sector) {
 #asm
     push bp
-	push si
-    mov dp, sp
+    push si
+    mov bp, sp
     push bx
     push cx
     push dx
     push es
     mov ah, #$42
-    mov dl, [bp+4]
-    mov ax, #$10
-    mov [si], ax
-    xor ax, ax
-    mov [si + 1], ax
-    xor ax, ax
-    inc ax
-    mov [si + 2], ax
-    mov ax, [bp + 4]
-    mov [si + 4], ax
-    mov ax, [bp + 2]
-    mov [si + 6], ax
-    mov eax, [bp]
-    mov [si + 8], eax
-    xor eax, eax
-    mov [si + 12], eax
+    mov dl, [bp + 6]
+    mov cx, [bp]
+    mov [.lba_low], cx
+    mov cx, [bp + 4]
+    mov [.target_segment], cx
+    xor si, si
+    mov si, .dap
+
+    clc
+
     int #$13
-    jc failure
-   success:
+
+    jc .failed
+   .succ:
     xor ax, ax
-    jmp exit
-   failure:
+    jmp .exit
+   .failed:
     xor ax, ax
     inc ax
-   exit:
+   .exit:
     pop es
     pop dx
     pop cx
     pop bx
 	pop si
     pop bp
+   .dap:
+    .size: db 16
+    .zero: db 0
+    .nsectors: dw 1
+    .target_offset: dw 0
+    .target_segment: dw 0
+    .lba_low: dd 0
+    .lba_high: dd 0
 #endasm
 }
 
