@@ -25,3 +25,28 @@ int bios_load_sector(int drive, unsigned int seg,
         return bios_hdd_load_sector(drive, seg, buf, sector);
 
 }
+
+static char drive_cache[512];
+static int cached_drive;
+static int cached_sect;
+static int cache_status = 0;
+
+int bios_read_byte(int drive, long loc) {
+
+    if (cached_drive == drive
+     && cached_sect == (loc / 512)
+     && cache_status) {
+        return drive_cache[loc % 512];
+    } else {
+        if (bios_load_sector(drive, 0xffff, drive_cache, loc / 512)) {
+            cache_status = 0;
+            return -1;
+        } else {
+            cached_drive = drive;
+            cached_sect = loc / 512;
+            cache_status = 1;
+            return drive_cache[loc % 512];
+        }
+    }
+
+}

@@ -13,7 +13,7 @@ int bios_hdd_load_sector(int drive, unsigned int seg, void *buf, int sector) {
     mov [target_offset], ax
     mov ax, [bp+10]
     mov [lba_low], ax
-    mov si, .dap
+    mov si, dap
     mov ah, #$42
     clc
     int #$13
