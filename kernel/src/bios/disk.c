@@ -58,3 +58,19 @@ int bios_read_byte(int drive, long loc) {
     }
 
 }
+
+long bios_read_word(int drive, long loc) {
+    long ret;
+    int val;
+
+    val = bios_read_byte(drive, loc);
+    if (val == -1)
+        return -1;
+    ret = val;
+    val = bios_read_byte(drive, loc + 1);
+    if (val == -1)
+        return -1;
+    ret |= (long)val << 8;
+
+    return ret;
+}

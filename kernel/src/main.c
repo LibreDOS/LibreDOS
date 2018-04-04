@@ -1,5 +1,6 @@
 #include <bios_io.h>
 #include <bios_disk.h>
+#include <klib.h>
 
 void kmain(void) {
     char buf[256];
