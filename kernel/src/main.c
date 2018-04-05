@@ -3,38 +3,22 @@
 #include <klib.h>
 
 void kmain(void) {
-    char buf[256];
+    char *buf;
     long i;
     int c;
 
     bios_puts("Welcome to LibreDOS!\r\n");
 
-    for (i = 0; i < 512; i++) {
-        c = bios_read_byte(0x00, i);
-        if (c == -1) {
-            bios_puts("\r\nNo disk in A:.");
-            break;
-        }
-        bios_putchar(c);
-    }
+    bios_puts("\r\nInitialising kernel mem allocation system...");
+    init_kalloc();
+    bios_puts("  DONE");
 
-    for (i = 0; i < 512; i++) {
-        c = bios_read_byte(0x01, i);
-        if (c == -1) {
-            bios_puts("\r\nNo disk in B:.");
-            break;
-        }
-        bios_putchar(c);
-    }
+    bios_puts("\r\nAllocating 256 bytes...");
+    buf = kalloc(256);
+    bios_puts("  DONE");
 
-    for (i = 0; i < 512; i++) {
-        c = bios_read_byte(0x80, i);
-        if (c == -1) {
-            bios_puts("\r\nNo disk in C:.");
-            break;
-        }
-        bios_putchar(c);
-    }
+    bios_puts("\r\nkalloc returned ptr = ");
+    kprn_x((unsigned long)buf);
 
     for (;;) {
         bios_puts("\r\nLibreDOS> ");
