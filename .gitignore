@@ -1,8 +1,8 @@
 /*.tar.bz2
 /*.tar.gz
 /*.img
+/limine
 /libredos.iso
-/iso/boot/kernel.bin
 /kernel/**/*.o
 /kernel/**/*.bin
 /bochsout.txt
