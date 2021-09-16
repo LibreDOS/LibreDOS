@@ -1,14 +1,14 @@
-extern __edata
-extern __end
+extern data_end
+extern bss_end
 
-extern _kmain
+extern kmain
 
-global _main
+global _start
 
 section .text
 
 bits 32
-_main:
+_start:
     mov esi, trampoline - 0x10 + 0x100000
     mov edi, 0x1000
     mov ecx, trampoline.end - trampoline
@@ -29,7 +29,7 @@ _main:
 bits 16
   .realmode:
     sti
-    call _kmain
+    call kmain
 
 bits 16
 trampoline:
@@ -55,7 +55,7 @@ trampoline:
     mov ss, ax
     mov sp, 0xfff0
 
-    jmp 0xffff:_main.realmode
+    jmp 0xffff:_start.realmode
 
   .end:
 
@@ -105,6 +105,6 @@ multiboot_header:
     .checksum dd -(0x1BADB002 + 0x00010000)
     .header_addr dd (multiboot_header - 0x10 + 0x100000)
     .load_addr dd 0x100000
-    .load_end_addr dd (__edata - 0x10 + 0x100000)
-    .bss_end_addr dd (__end - 0x10 + 0x100000)
-    .entry_addr dd (_main - 0x10 + 0x100000)
+    .load_end_addr dd (data_end - 0x10 + 0x100000)
+    .bss_end_addr dd (bss_end - 0x10 + 0x100000)
+    .entry_addr dd (_start - 0x10 + 0x100000)

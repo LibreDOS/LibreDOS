@@ -1,16 +1,8 @@
-#include <bios_io.h>
+#include <stdint.h>
+#include <bios/io.h>
 
 void bios_putchar(char c) {
-#asm
-    push bp
-    mov bp, sp
-    push ax
-    mov ax, [bp+4]
-    mov ah, #$0e
-    int #$10
-    pop ax
-    pop bp
-#endasm
+    asm volatile ("int $0x10" :: "a" (0x0e00 | c));
 }
 
 void bios_puts(char *str) {
@@ -24,11 +16,9 @@ void bios_puts(char *str) {
 }
 
 int bios_getchar(void) {
-#asm
-    xor ax, ax
-    int #$16
-    xor ah, ah
-#endasm
+    uint16_t ret = 0;
+    asm volatile ("int $0x16" : "+a" (ret));
+    return ret & 0xff;
 }
 
 void bios_gets(char *str, int limit) {

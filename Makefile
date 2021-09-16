@@ -1,5 +1,7 @@
 ISO_IMAGE = libredos.iso
 
+export PATH := $(shell pwd)/toolchain/bin:$(PATH)
+
 .PHONY: all $(ISO_IMAGE) clean run
 
 all: $(ISO_IMAGE)

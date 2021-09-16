@@ -1,4 +1,4 @@
-#include <klib.h>
+#include <lib/klib.h>
 
 void kprn_ul(unsigned long x) {
     int i;
@@ -60,8 +60,8 @@ void *kmemcpy(void *dest, void *src, unsigned int count) {
     return dest;
 }
 
-extern void *_end;
-unsigned int memory_base;
+extern symbol bss_end;
+static unsigned int memory_base;
 #define KRNL_MEMORY_BASE ((unsigned int)(memory_base + 0x10) & ((unsigned int)(0xfff0)))
 #define KALLOC_MAX_SIZE ((unsigned int)((((unsigned int)(0xffff)) - KRNL_MEMORY_BASE) + 1))
 
@@ -76,12 +76,7 @@ void init_kalloc(void) {
     /* creates the first memory chunk */
     struct heap_chunk_t *root_chunk;
 
-    #asm
-        push ax
-        mov ax, #__end
-        mov [_memory_base], ax
-        pop ax
-    #endasm
+    memory_base = (unsigned int)bss_end;
 
     root_chunk = (struct heap_chunk_t *)KRNL_MEMORY_BASE;
 
@@ -198,7 +193,7 @@ void *krealloc(void *addr, unsigned int new_size) {
 
     /* keep allocations 16 byte aligned */
     new_size = (new_size + 0x10) & 0xfff0;
-    
+
     if (heap_chunk->size > new_size)
         kmemcpy(new_ptr, addr, new_size);
     else

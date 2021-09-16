@@ -1,28 +1,27 @@
-CC = bcc
-LD = ld86
+CC = ia16-elf-gcc
+LD = ia16-elf-gcc
 ASM = nasm
 
-C_FILES = $(shell find ./src -type f -name '*.c')
-H_FILES = $(shell find ./include -type f -name '*.h')
-ASM_FILES = $(shell find ./src -type f -name '*.asm')
-STARTUP_FILES = $(shell find ./startup -type f -name '*.asm')
-OBJ = $(STARTUP_FILES:.asm=.o) $(C_FILES:.c=.o) $(ASM_FILES:.asm=.o)
+CFLAGS ?= -pipe -O2 -Wall -Wextra
+LDFLAGS ?=
 
-CHARDFLAGS = -ansi -I./include/
-LDHARDFLAGS = -d -T0x0010
-CFLAGS = 
-LDFLAGS = 
+C_FILES = $(shell find . -type f -name '*.c')
+ASM_FILES = $(shell find . -type f -name '*.asm')
+OBJ = $(C_FILES:.c=.o) $(ASM_FILES:.asm=.o)
+
+CHARDFLAGS = -ffreestanding -I.
+LDHARDFLAGS = -nostdlib -lgcc -Tlinker.ld
 
 .PHONY: clean
 
 kernel.bin: $(OBJ) $(H_FILES)
-	$(LD) $(LDHARDFLAGS) $(OBJ) $(LDFLAGS) -o $@
+	$(LD) $(OBJ) $(LDHARDFLAGS) $(LDFLAGS) -o $@
 
 %.o: %.c
 	$(CC) $(CHARDFLAGS) $(CFLAGS) -c $< -o $@
 
 %.o: %.asm
-	$(ASM) $< -f as86 -o $@
+	$(ASM) $< -f elf32 -o $@
 
 clean:
 	rm -f $(OBJ) kernel.bin

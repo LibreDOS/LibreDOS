@@ -7,3 +7,5 @@
 /kernel/**/*.bin
 /bochsout.txt
 /bx_enh_dbg.ini
+/toolchain
+!/toolchain/make_toolchain.sh

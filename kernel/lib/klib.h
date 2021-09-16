@@ -8,4 +8,6 @@ void *kalloc(unsigned int);
 void kfree(void *);
 void *krealloc(void *, unsigned int);
 
+typedef char symbol[];
+
 #endif
