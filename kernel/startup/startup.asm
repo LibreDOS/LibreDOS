@@ -5,59 +5,56 @@ extern kmain
 
 global _start
 
+%define target_address 0x500
+%define load_address 0x200000
+
 section .text
 
 bits 32
 _start:
-    mov esi, trampoline - 0x10 + 0x100000
-    mov edi, 0x1000
-    mov ecx, trampoline.end - trampoline
+    mov esi, load_address
+    mov edi, target_address
+    mov ecx, bss_end - target_address
     rep movsb
 
-    ; exit protected mode
-    lidt [real_mode_idt - 0x10 + 0x100000]
-    lgdt [real_mode_gdt - 0x10 + 0x100000]
+    mov eax, .reloc
+    jmp eax
+  .reloc:
 
-    mov ax, 0x0010
+    ; exit protected mode
+    lidt [real_mode_idt]
+    lgdt [real_mode_gdt]
+
+    jmp 0x08:.mode16
+  bits 16
+  .mode16:
+    mov ax, 0x10
     mov ds, ax
     mov es, ax
     mov fs, ax
     mov gs, ax
     mov ss, ax
-    jmp 0x0008:0x1000
 
-bits 16
-  .realmode:
-    sti
-    call kmain
-
-bits 16
-trampoline:
     mov eax, cr0
     and al, 0xfe
     mov cr0, eax
 
-    xor eax, eax
-    xor ebx, ebx
-    xor ecx, ecx
-    xor edx, edx
-    xor esi, esi
-    xor edi, edi
-    xor ebp, ebp
-    xor esp, esp
+    jmp 0x0000:.realmode
+  .realmode:
 
     xor ax, ax
-    mov fs, ax
-    mov gs, ax
-    not ax
     mov ds, ax
     mov es, ax
+    mov fs, ax
+    mov gs, ax
     mov ss, ax
     mov sp, 0xfff0
 
-    jmp 0xffff:_start.realmode
+    sti
 
-  .end:
+    call kmain
+
+section .rodata
 
 align 16
 real_mode_idt:
@@ -67,7 +64,7 @@ real_mode_idt:
 align 16
 real_mode_gdt:
     dw .end - .start - 1
-    dd .start - 0x10 + 0x100000
+    dd .start
 
 align 16
     .start:
@@ -98,13 +95,15 @@ align 16
 
     .end:
 
+section .mb_header
+
 align 4
 multiboot_header:
     .magic dd 0x1BADB002
     .flags dd 0x00010000
     .checksum dd -(0x1BADB002 + 0x00010000)
-    .header_addr dd (multiboot_header - 0x10 + 0x100000)
-    .load_addr dd 0x100000
-    .load_end_addr dd (data_end - 0x10 + 0x100000)
-    .bss_end_addr dd (bss_end - 0x10 + 0x100000)
-    .entry_addr dd (_start - 0x10 + 0x100000)
+    .header_addr dd load_address + (multiboot_header - target_address)
+    .load_addr dd load_address
+    .load_end_addr dd load_address + (data_end - target_address)
+    .bss_end_addr dd load_address + (bss_end - target_address)
+    .entry_addr dd load_address + (_start - target_address)

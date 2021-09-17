@@ -3,10 +3,10 @@ ENTRY(_start)
 
 SECTIONS
 {
-    . = 0x0010;
+    . = 0x500;
 
     .text : {
-        *(.entry)
+        *(.mb_header)
         *(.text*)
     }
 

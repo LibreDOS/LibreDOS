@@ -1,3 +1,4 @@
+#include <stdint.h>
 #include <bios/io.h>
 #include <bios/disk.h>
 #include <lib/klib.h>
@@ -18,7 +19,14 @@ void kmain(void) {
     bios_puts("  DONE");
 
     bios_puts("\r\nkalloc returned ptr = ");
-    kprn_x((unsigned long)buf);
+    kprn_x((uintptr_t)buf);
+
+    bios_puts("\r\nAllocating 256 bytes...");
+    buf = kalloc(256);
+    bios_puts("  DONE");
+
+    bios_puts("\r\nkalloc returned ptr = ");
+    kprn_x((uintptr_t)buf);
 
     for (;;) {
         bios_puts("\r\nLibreDOS> ");
