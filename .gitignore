@@ -5,6 +5,7 @@
 /libredos.iso
 /kernel/**/*.o
 /kernel/**/*.bin
+/bootsect/**/*.bin
 /bochsout.txt
 /bx_enh_dbg.ini
 /toolchain
