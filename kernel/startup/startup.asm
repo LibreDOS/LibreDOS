@@ -40,13 +40,17 @@ _start:
     mov cr0, eax
 
     jmp 0x0000:.realmode
+
+    ; legacy boot sector entrypoint signature
+    align 2
+    dd 0x55AA55AA
   .realmode:
 
     xor ax, ax
     mov ds, ax
     mov es, ax
-    mov fs, ax
-    mov gs, ax
+;    mov fs, ax
+;    mov gs, ax
     mov ss, ax
     mov sp, 0xfff0
 
