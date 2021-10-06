@@ -24,6 +24,7 @@ $(ISO_IMAGE): limine
 $(FLOPPY_IMAGE):
 	$(MAKE) -C kernel
 	$(MAKE) -C bootsect
+	-sudo umount -d floppy_root
 	rm -f $(FLOPPY_IMAGE)
 	mkdosfs -C $(FLOPPY_IMAGE) -n LIBREDOS 360
 	dd if=bootsect/bootsect.bin of=$(FLOPPY_IMAGE) bs=1 count=11 conv=notrunc
@@ -32,9 +33,9 @@ $(FLOPPY_IMAGE):
 	mkdir -p floppy_root
 	sudo mount -o loop $(FLOPPY_IMAGE) floppy_root
 	sudo cp kernel/kernel.bin floppy_root/KERNEL.BIN
-	sudo fatattr +rs floppy_root/kernel.bin
-	sudo umount floppy_root
-	sudo rm -rf floppy_root
+	sudo fatattr +rs -a floppy_root/kernel.bin
+	sudo umount -d floppy_root
+	rm -rf floppy_root
 
 clean:
 	$(MAKE) clean -C kernel
