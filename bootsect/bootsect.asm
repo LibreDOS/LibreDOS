@@ -146,7 +146,7 @@ inc_chs:
   .return:
     jmp int13
 
-; Turn the LSN into ax into int 13h CSH coordinates, and load dl with the tentative boot drive.
+; Turn the LSN in ax into int 13h CSH coordinates, and load dl with the tentative boot drive.
 lsn2chs:
     add ax, [bpb.hidden_sectors]        ; Convert LSN to LBA
     xor dx, dx                          ; track_number = lsn/sectors_per_track and sector = lsn%sectors_per_track+11
