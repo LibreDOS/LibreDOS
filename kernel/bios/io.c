@@ -2,7 +2,7 @@
 #include <bios/io.h>
 
 void bios_putchar(char c) {
-    asm volatile ("int $0x10" :: "a" (0x0e00 | c));
+    asm volatile ("int $0x10" :: "a" (0x0e00 | c), "b" (0) : "%bp");
 }
 
 void bios_puts(char *str) {
