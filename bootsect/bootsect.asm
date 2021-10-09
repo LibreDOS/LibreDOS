@@ -38,7 +38,7 @@ bootloader:
     mov ds, ax
     mov ss, ax
     mov sp, 0x7C00                      ; Set up stack just below boot sector
-    mov ax, 0x0050                      ; Set es to the place we want to load our stuff
+    mov ax, 0x0150                      ; Set es to the place we want to load our stuff
     mov es, ax
 
     mov si, message                     ; Tell the user we somehow got this far

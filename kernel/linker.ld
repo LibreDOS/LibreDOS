@@ -3,7 +3,7 @@ ENTRY(_start)
 
 SECTIONS
 {
-    . = 0x520;
+    . = 0x1500;
 
     .text : {
         *(.mb_header)

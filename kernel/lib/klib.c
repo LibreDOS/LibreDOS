@@ -149,8 +149,7 @@ void __far *kalloc(unsigned int size) {
     /* convert size into paragraphs */
     size = PARA(size);
 
-    for (;;) {
-        kprn_x(SEGMENTOF(heap_chunk));
+    for(;;) {
         if ((heap_chunk->free) && (heap_chunk->size == size)) {
             /* simply mark heap_chunk as not free */
             heap_chunk->free = !heap_chunk->free;
@@ -168,7 +167,7 @@ void __far *kalloc(unsigned int size) {
             /* tell the next chunk where the old chunk is now */
             next_chunk = FARPTR(SEGMENTOF(new_chunk) + new_chunk->size + HEAP_CHUNK_SIZE, 0);
             next_chunk->prev_chunk = SEGMENTOF(new_chunk);
-            area = FARPTR(heap_chunk + HEAP_CHUNK_SIZE, 0);
+            area = FARPTR(SEGMENTOF(heap_chunk) + HEAP_CHUNK_SIZE, 0);
             break;
         } else {
             heap_chunk_ptr = SEGMENTOF(heap_chunk);
@@ -202,11 +201,8 @@ void kfree(void __far *addr) {
     /* flag chunk as free */
     heap_chunk->free = 1;
 
-    if (SEGMENTOF(next_chunk) >= memory_end)
-        goto skip_next_chunk;
-
     /* if the next chunk is free as well, fuse the chunks into a single one */
-    if (next_chunk->free) {
+    if (SEGMENTOF(next_chunk) >= memory_end && next_chunk->free) {
         heap_chunk->size += next_chunk->size + HEAP_CHUNK_SIZE;
         /* update next chunk ptr */
         next_chunk = FARPTR(SEGMENTOF(next_chunk) + next_chunk->size + HEAP_CHUNK_SIZE, 0);
@@ -214,7 +210,6 @@ void kfree(void __far *addr) {
         next_chunk->prev_chunk = SEGMENTOF(heap_chunk);
     }
 
-skip_next_chunk:
     /* if the previous chunk is free as well, fuse the chunks into a single one */
     if (prev_chunk) {       /* if its not the first chunk */
         if (prev_chunk->free) {
