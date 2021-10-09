@@ -4,33 +4,52 @@
 #include <lib/klib.h>
 
 void kmain(void) {
-    char __far *buf;
+    char *buf;
+    char __far *seg;
     //long i;
     //int c;
 
     kputs("Welcome to LibreDOS!\r\n");
 
-    kputs("\r\nInitialising kernel mem allocation system...");
-    init_kalloc();
+    kputs("\r\nInitialising kernel data seg mem allocation system...");
+    init_knalloc();
     kputs("  DONE");
 
     kputs("\r\nAllocating 256 bytes...");
-    buf = kalloc(256);
+    buf = knalloc(256);
     kputs("  DONE");
 
-    kputs("\r\nkalloc returned ptr = ");
-    kprn_x(SEGMENTOF(buf));
+    kputs("\r\nknalloc returned ptr = ");
+    kprn_x((unsigned int)buf);
 
     kputs("\r\nAllocating 256 bytes...");
-    buf = kalloc(256);
+    buf = knalloc(256);
     kputs("  DONE");
 
-    kputs("\r\nkalloc returned ptr = ");
-    kprn_x(SEGMENTOF(buf));
+    kputs("\r\nknalloc returned ptr = ");
+    kprn_x((unsigned int)buf);
+
+    kputs("\r\nInitialising mem seg allocation system...");
+    init_kfalloc();
+    kputs("  DONE");
+
+    kputs("\r\nAllocating 128k bytes...");
+    seg = kfalloc(131072);
+    kputs("  DONE");
+
+    kputs("\r\nkfalloc returned seg = ");
+    kprn_x(SEGMENTOF(seg));
+
+    kputs("\r\nAllocating 128k bytes...");
+    seg = kfalloc(131072);
+    kputs("  DONE");
+
+    kputs("\r\nkfalloc returned seg = ");
+    kprn_x(SEGMENTOF(seg));
 
     for (;;) {
         kputs("\r\nLibreDOS> ");
-        kgets((char *)(SEGMENTOF(buf)<<4), 256);
-        kputs((char *)(SEGMENTOF(buf)<<4));
+        kgets(buf, 256);
+        kputs(buf);
     }
 }

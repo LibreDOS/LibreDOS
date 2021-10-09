@@ -10,10 +10,16 @@ void kprn_ul(unsigned long);
 void kprn_x(unsigned long);
 void kputs(char *);
 void kgets(char *, int);
-void init_kalloc(void);
-void __far *kalloc(unsigned int);
-void kfree(void __far*);
-void __far *krealloc(void __far*, unsigned int);
+
+void *knmemcpy(void *, void *, unsigned int);
+void __far *kfmemcpy(void __far*, void __far*, unsigned long);
+
+void init_knalloc(void);
+void init_kfalloc(void);
+void *knalloc(unsigned int);
+void __far *kfalloc(unsigned long);
+void kffree(void __far*);
+void __far *kfrealloc(void __far*, unsigned long);
 
 typedef char symbol[];
 
