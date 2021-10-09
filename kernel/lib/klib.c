@@ -205,7 +205,7 @@ void __far *kfalloc(unsigned long size) {
             break;
         } else if ((heap_chunk->free) && (heap_chunk->size >= (paras + HEAP_CHUNK_SIZE))) {
             /* split off a new heap_chunk */
-            new_chunk = FARPTR(SEGMENTOF(heap_chunk) + paras + HEAP_CHUNK_SIZE, 0);
+            new_chunk = heap_chunk + (unsigned long)FARPTR(paras + HEAP_CHUNK_SIZE, 0);
             new_chunk->free = 1;
             new_chunk->size = heap_chunk->size - (paras + HEAP_CHUNK_SIZE);
             new_chunk->prev_chunk = SEGMENTOF(heap_chunk);
@@ -213,9 +213,9 @@ void __far *kfalloc(unsigned long size) {
             heap_chunk->free = !heap_chunk->free;
             heap_chunk->size = paras;
             /* tell the next chunk where the old chunk is now */
-            next_chunk = FARPTR(SEGMENTOF(new_chunk) + new_chunk->size + HEAP_CHUNK_SIZE, 0);
+            next_chunk = new_chunk + (unsigned long)FARPTR(new_chunk->size + HEAP_CHUNK_SIZE, 0);
             next_chunk->prev_chunk = SEGMENTOF(new_chunk);
-            area = FARPTR(SEGMENTOF(heap_chunk) + HEAP_CHUNK_SIZE, 0);
+            area = (char __far*)heap_chunk + (unsigned long)FARPTR(HEAP_CHUNK_SIZE,0);
             break;
         } else {
             heap_chunk_ptr = SEGMENTOF(heap_chunk);
@@ -262,7 +262,7 @@ void kffree(void __far *addr) {
     if (SEGMENTOF(next_chunk) >= memory_end && next_chunk->free) {
         heap_chunk->size += next_chunk->size + HEAP_CHUNK_SIZE;
         /* update next chunk ptr */
-        next_chunk = FARPTR(SEGMENTOF(next_chunk) + next_chunk->size + HEAP_CHUNK_SIZE, 0);
+        next_chunk += (unsigned long)FARPTR(next_chunk->size + HEAP_CHUNK_SIZE, 0);
         /* update new next chunk's prev to ourselves */
         next_chunk->prev_chunk = SEGMENTOF(heap_chunk);
     }
