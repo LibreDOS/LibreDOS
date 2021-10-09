@@ -1,3 +1,4 @@
+#include <bios/io.h>
 #include <lib/klib.h>
 
 void kprn_ul(unsigned long x) {
@@ -18,7 +19,7 @@ void kprn_ul(unsigned long x) {
     }
 
     i++;
-    bios_puts(buf + i);
+    kputs(buf + i);
 
     return;
 }
@@ -33,7 +34,7 @@ void kprn_x(unsigned long x) {
         buf[i] = 0;
 
     if (!x) {
-        bios_puts("0x0");
+        kputs("0x0");
         return;
     }
 
@@ -43,16 +44,59 @@ void kprn_x(unsigned long x) {
     }
 
     i++;
-    bios_puts("0x");
-    bios_puts(buf + i);
+    kputs("0x");
+    kputs(buf + i);
 
     return;
 }
 
-void *kmemcpy(void *dest, void *src, unsigned int count) {
+void kgets(char *str, int limit) {
+    int i = 0;
+    int c;
+
+    for (;;) {
+        c = bios_getchar();
+        switch (c) {
+            case 0x08:
+                if (i) {
+                    i--;
+                    bios_putchar(0x08);
+                    bios_putchar(' ');
+                    bios_putchar(0x08);
+                }
+                continue;
+            case 0x0d:
+                bios_putchar(0x0d);
+                bios_putchar(0x0a);
+                str[i] = 0;
+                break;
+            default:
+                if (i == limit - 1)
+                    continue;
+                bios_putchar(c);
+                str[i++] = (char)c;
+                continue;
+        }
+        break;
+    }
+
+    return;
+}
+
+void kputs(char *str) {
+    int i;
+
+    for (i = 0; str[i]; i++) {
+        bios_putchar(str[i]);
+    }
+
+    return;
+}
+
+void __far *kmemcpy(void __far *dest, void __far *src, unsigned int count) {
     unsigned int i;
-    char *destptr = (char *)dest;
-    char *srcptr = (char *)src;
+    char __far *destptr = dest;
+    char __far *srcptr = src;
 
     for (i = 0; i < count; i++)
         destptr[i] = srcptr[i];
@@ -62,8 +106,7 @@ void *kmemcpy(void *dest, void *src, unsigned int count) {
 
 extern symbol bss_end;
 static unsigned int memory_base;
-#define KRNL_MEMORY_BASE ((unsigned int)(memory_base + 0x10) & ((unsigned int)(0xfff0)))
-#define KALLOC_MAX_SIZE ((unsigned int)((((unsigned int)(0xffff)) - KRNL_MEMORY_BASE) + 1))
+static unsigned int memory_end;
 
 struct heap_chunk_t {
     int free;
@@ -72,54 +115,67 @@ struct heap_chunk_t {
     int padding[5];
 };
 
+#define HEAP_CHUNK_SIZE (sizeof(struct heap_chunk_t) >> 4)
+
 void init_kalloc(void) {
     /* creates the first memory chunk */
-    struct heap_chunk_t *root_chunk;
+    struct heap_chunk_t __far *root_chunk;
 
-    memory_base = (unsigned int)bss_end;
+    /* get first paragraph after kernel segment */
+    memory_base = PARA((unsigned int)bss_end);
 
-    root_chunk = (struct heap_chunk_t *)KRNL_MEMORY_BASE;
+    /* get first paragraph after conventional memory */
+    asm ("int $0x12" : "=a" (memory_end));
+    memory_end <<= 6;
+
+    root_chunk = FARPTR(memory_base,0);
 
     root_chunk->free = 1;
-    root_chunk->size = KALLOC_MAX_SIZE - sizeof(struct heap_chunk_t);
+    root_chunk->size = memory_end - (memory_base + HEAP_CHUNK_SIZE);
     root_chunk->prev_chunk = 0;
 
     return;
 }
 
-void *kalloc(unsigned int size) {
+void __far *kalloc(unsigned int size) {
     /* search for a big enough, free heap chunk */
-    struct heap_chunk_t *heap_chunk = (struct heap_chunk_t *)KRNL_MEMORY_BASE;
-    struct heap_chunk_t *new_chunk;
-    struct heap_chunk_t *next_chunk;
-    unsigned int heap_chunk_ptr;
-    char *area;
+    struct heap_chunk_t __far *heap_chunk = FARPTR(memory_base,0);
+    struct heap_chunk_t __far *new_chunk;
+    struct heap_chunk_t __far *next_chunk;
+    unsigned long heap_chunk_ptr;
+    char __far *area;
     unsigned int i;
 
-    /* keep allocations 16 byte aligned */
-    size = (size + 0x10) & 0xfff0;
+    /* convert size into paragraphs */
+    size = PARA(size);
 
     for (;;) {
-        if ((heap_chunk->free) && (heap_chunk->size > (size + sizeof(struct heap_chunk_t)))) {
+        kprn_x(SEGMENTOF(heap_chunk));
+        if ((heap_chunk->free) && (heap_chunk->size == size)) {
+            /* simply mark heap_chunk as not free */
+            heap_chunk->free = !heap_chunk->free;
+            area = FARPTR(heap_chunk + HEAP_CHUNK_SIZE, 0);
+            break;
+        } else if ((heap_chunk->free) && (heap_chunk->size >= (size + HEAP_CHUNK_SIZE))) {
             /* split off a new heap_chunk */
-            new_chunk = (struct heap_chunk_t *)((unsigned int)heap_chunk + size + sizeof(struct heap_chunk_t));
+            new_chunk = FARPTR(SEGMENTOF(heap_chunk) + size + HEAP_CHUNK_SIZE, 0);
             new_chunk->free = 1;
-            new_chunk->size = heap_chunk->size - (size + sizeof(struct heap_chunk_t));
-            new_chunk->prev_chunk = (unsigned int)heap_chunk;
+            new_chunk->size = heap_chunk->size - (size + HEAP_CHUNK_SIZE);
+            new_chunk->prev_chunk = SEGMENTOF(heap_chunk);
             /* resize the old chunk */
             heap_chunk->free = !heap_chunk->free;
             heap_chunk->size = size;
             /* tell the next chunk where the old chunk is now */
-            next_chunk = (struct heap_chunk_t *)((unsigned int)new_chunk + new_chunk->size + sizeof(struct heap_chunk_t));
-            next_chunk->prev_chunk = (unsigned int)new_chunk;
-            area = (char *)((unsigned int)heap_chunk + sizeof(struct heap_chunk_t));
+            next_chunk = FARPTR(SEGMENTOF(new_chunk) + new_chunk->size + HEAP_CHUNK_SIZE, 0);
+            next_chunk->prev_chunk = SEGMENTOF(new_chunk);
+            area = FARPTR(heap_chunk + HEAP_CHUNK_SIZE, 0);
             break;
         } else {
-            heap_chunk_ptr = (unsigned int)heap_chunk;
-            heap_chunk_ptr += heap_chunk->size + sizeof(struct heap_chunk_t);
-            if (heap_chunk_ptr >= KALLOC_MAX_SIZE)
-                return (void *)0;
-            heap_chunk = (struct heap_chunk_t *)heap_chunk_ptr;
+            heap_chunk_ptr = SEGMENTOF(heap_chunk);
+            heap_chunk_ptr += heap_chunk->size + HEAP_CHUNK_SIZE;
+            if (heap_chunk_ptr >= memory_end)
+                return (void __far*)0;
+            heap_chunk = FARPTR(heap_chunk_ptr,0);
             continue;
         }
     }
@@ -128,78 +184,78 @@ void *kalloc(unsigned int size) {
     for (i = 0; i < size; i++)
         area[i] = 0;
 
-    return (void *)area;
+    return area;
 }
 
-void kfree(void *addr) {
-    unsigned int heap_chunk_ptr = (unsigned int)addr;
-    struct heap_chunk_t *heap_chunk, *next_chunk, *prev_chunk;
+void kfree(void __far *addr) {
+    unsigned int heap_chunk_ptr = SEGMENTOF(addr);
+    __far struct heap_chunk_t *heap_chunk, *next_chunk, *prev_chunk;
 
-    heap_chunk_ptr -= sizeof(struct heap_chunk_t);
-    heap_chunk = (struct heap_chunk_t *)heap_chunk_ptr;
+    heap_chunk_ptr -= HEAP_CHUNK_SIZE;
+    heap_chunk = FARPTR(heap_chunk_ptr,0);
 
-    heap_chunk_ptr += heap_chunk->size + sizeof(struct heap_chunk_t);
-    next_chunk = (struct heap_chunk_t *)heap_chunk_ptr;
+    heap_chunk_ptr += heap_chunk->size + HEAP_CHUNK_SIZE;
+    next_chunk = FARPTR(heap_chunk_ptr,0);
 
-    prev_chunk = (struct heap_chunk_t *)heap_chunk->prev_chunk;
+    prev_chunk = FARPTR(heap_chunk->prev_chunk,0);
 
     /* flag chunk as free */
     heap_chunk->free = 1;
 
-    if ((unsigned int)next_chunk >= KALLOC_MAX_SIZE)
+    if (SEGMENTOF(next_chunk) >= memory_end)
         goto skip_next_chunk;
 
     /* if the next chunk is free as well, fuse the chunks into a single one */
     if (next_chunk->free) {
-        heap_chunk->size += next_chunk->size + sizeof(struct heap_chunk_t);
+        heap_chunk->size += next_chunk->size + HEAP_CHUNK_SIZE;
         /* update next chunk ptr */
-        next_chunk = (struct heap_chunk_t *)((unsigned int)next_chunk + next_chunk->size + sizeof(struct heap_chunk_t));
+        next_chunk = FARPTR(SEGMENTOF(next_chunk) + next_chunk->size + HEAP_CHUNK_SIZE, 0);
         /* update new next chunk's prev to ourselves */
-        next_chunk->prev_chunk = (unsigned int)heap_chunk;
+        next_chunk->prev_chunk = SEGMENTOF(heap_chunk);
     }
 
 skip_next_chunk:
     /* if the previous chunk is free as well, fuse the chunks into a single one */
     if (prev_chunk) {       /* if its not the first chunk */
         if (prev_chunk->free) {
-            prev_chunk->size += heap_chunk->size + sizeof(struct heap_chunk_t);
+            prev_chunk->size += heap_chunk->size + HEAP_CHUNK_SIZE;
             /* notify the next chunk of the change */
-            if ((unsigned int)next_chunk < KALLOC_MAX_SIZE)
-                next_chunk->prev_chunk = (unsigned int)prev_chunk;
+            if (SEGMENTOF(next_chunk) < memory_end)
+                next_chunk->prev_chunk = SEGMENTOF(prev_chunk);
         }
     }
 
     return;
 }
 
-void *krealloc(void *addr, unsigned int new_size) {
-    unsigned int heap_chunk_ptr = (unsigned int)addr;
-    struct heap_chunk_t *heap_chunk;
-    char *new_ptr;
+void __far *krealloc(void __far *addr, unsigned int new_size) {
+    unsigned int heap_chunk_ptr = SEGMENTOF(addr);
+    struct heap_chunk_t __far *heap_chunk;
+    char __far *new_ptr;
 
     if (!addr)
         return kalloc(new_size);
 
     if (!new_size) {
         kfree(addr);
-        return (void *)0;
+        return (void __far*)0;
     }
 
-    heap_chunk_ptr -= sizeof(struct heap_chunk_t);
-    heap_chunk = (struct heap_chunk_t *)heap_chunk_ptr;
+    heap_chunk_ptr -= HEAP_CHUNK_SIZE;
+    heap_chunk = FARPTR(heap_chunk_ptr,0);
 
     if ((new_ptr = kalloc(new_size)) == 0)
-        return (void *)0;
+        return (void __far*)0;
 
-    /* keep allocations 16 byte aligned */
-    new_size = (new_size + 0x10) & 0xfff0;
+    /* convert size to paragraphs */
+    new_size = PARA(new_size);
 
     if (heap_chunk->size > new_size)
-        kmemcpy(new_ptr, addr, new_size);
+        kmemcpy(new_ptr, addr, new_size << 4);
     else
-        kmemcpy(new_ptr, addr, heap_chunk->size);
+        kmemcpy(new_ptr, addr, heap_chunk->size << 4);
 
     kfree(addr);
 
-    return (void *)new_ptr;
+    return new_ptr;
 }

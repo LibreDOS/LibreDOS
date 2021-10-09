@@ -4,33 +4,33 @@
 #include <lib/klib.h>
 
 void kmain(void) {
-    char *buf;
-    long i;
-    int c;
+    char __far *buf;
+    //long i;
+    //int c;
 
-    bios_puts("Welcome to LibreDOS!\r\n");
+    kputs("Welcome to LibreDOS!\r\n");
 
-    bios_puts("\r\nInitialising kernel mem allocation system...");
+    kputs("\r\nInitialising kernel mem allocation system...");
     init_kalloc();
-    bios_puts("  DONE");
+    kputs("  DONE");
 
-    bios_puts("\r\nAllocating 256 bytes...");
+    kputs("\r\nAllocating 256 bytes...");
     buf = kalloc(256);
-    bios_puts("  DONE");
+    kputs("  DONE");
 
-    bios_puts("\r\nkalloc returned ptr = ");
-    kprn_x((uintptr_t)buf);
+    kputs("\r\nkalloc returned ptr = ");
+    kprn_x(SEGMENTOF(buf));
 
-    bios_puts("\r\nAllocating 256 bytes...");
+    kputs("\r\nAllocating 256 bytes...");
     buf = kalloc(256);
-    bios_puts("  DONE");
+    kputs("  DONE");
 
-    bios_puts("\r\nkalloc returned ptr = ");
-    kprn_x((uintptr_t)buf);
+    kputs("\r\nkalloc returned ptr = ");
+    kprn_x(SEGMENTOF(buf));
 
     for (;;) {
-        bios_puts("\r\nLibreDOS> ");
-        bios_gets(buf, 256);
-        bios_puts(buf);
+        kputs("\r\nLibreDOS> ");
+        kgets((char *)(SEGMENTOF(buf)<<4), 256);
+        kputs((char *)(SEGMENTOF(buf)<<4));
     }
 }

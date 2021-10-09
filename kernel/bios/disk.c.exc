@@ -1,4 +1,4 @@
-#include <bios_disk.h>
+#include <bios/disk.h>
 #include <system.h>
 
 #define     FLOPPY_HPC     2

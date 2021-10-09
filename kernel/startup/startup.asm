@@ -5,7 +5,7 @@ extern kmain
 
 global _start
 
-%define target_address 0x500
+%define target_address 0x520
 %define load_address 0x200000
 
 section .text
@@ -49,10 +49,8 @@ _start:
     xor ax, ax
     mov ds, ax
     mov es, ax
-;    mov fs, ax
-;    mov gs, ax
     mov ss, ax
-    mov sp, 0x8000
+    mov sp, kernel_stack+0x1000
 
     sti
 
@@ -111,3 +109,9 @@ multiboot_header:
     .load_end_addr dd load_address + (data_end - target_address)
     .bss_end_addr dd load_address + (bss_end - target_address)
     .entry_addr dd load_address + (_start - target_address)
+
+section .bss
+
+align 2
+kernel_stack:
+    resw 0x0800
