@@ -93,6 +93,12 @@ void kputs(char *str) {
     return;
 }
 
+void kpanic(char *str) {
+    kputs(str);
+    asm volatile ("cli");
+    for (;;);
+}
+
 void *knmemcpy(void *dest, void *src, unsigned int count) {
     unsigned int i;
     char *destptr = dest;
@@ -130,16 +136,18 @@ void __far *kfmemcpy(void __far *dest, void __far *src, unsigned long count) {
 extern symbol bss_end;
 static unsigned int memory_base;
 static unsigned int memory_end;
-static int inited=0;
+static int inited = 0;
+static char memerror[] = "\r\nMemory allocation error!\r\n";
 
-struct heap_chunk_t {
-    int free;
+/* DOS-style MCB */
+__attribute__((packed)) struct mcb_t {
+    char type;
+    unsigned int owner;
     unsigned int size;
-    unsigned int prev_chunk;
-    int padding[5];
+    char reserved[11];
 };
 
-#define HEAP_CHUNK_SIZE (sizeof(struct heap_chunk_t) >> 4)
+#define HEAP_CHUNK_SIZE (sizeof(struct mcb_t) >> 4)
 
 void init_knalloc(void) {
     /* get first paragraph after kernel segment */
@@ -149,21 +157,6 @@ void init_knalloc(void) {
     asm ("int $0x12" : "=a" (memory_end));
     memory_end <<= 6;
 
-    return;
-}
-
-/* knalloc should not be called after this */
-void init_kfalloc(void) {
-    /* creates the first memory chunk */
-    struct heap_chunk_t __far *root_chunk;
-
-    root_chunk = FARPTR(memory_base,0);
-
-    root_chunk->free = 1;
-    root_chunk->size = memory_end - (memory_base + HEAP_CHUNK_SIZE);
-    root_chunk->prev_chunk = 0;
-
-    inited=1;
     return;
 }
 
@@ -185,11 +178,25 @@ void *knalloc(unsigned int size) {
     return (void *)ptr;
 }
 
-void __far *kfalloc(unsigned long size) {
+/* knalloc should not be called after this */
+void init_kfalloc(void) {
+    /* creates the first memory chunk */
+    struct mcb_t __far *root_chunk;
+
+    root_chunk = FARPTR(memory_base,0);
+
+    root_chunk->type = 'M';
+    root_chunk->owner = 0;
+    root_chunk->size = memory_end - (memory_base + HEAP_CHUNK_SIZE);
+
+    inited=1;
+    return;
+}
+
+void __far *kfalloc(unsigned long size, unsigned int owner) {
     /* search for a big enough, free heap chunk */
-    struct heap_chunk_t __far *heap_chunk = FARPTR(memory_base,0);
-    struct heap_chunk_t __far *new_chunk;
-    struct heap_chunk_t __far *next_chunk;
+    struct mcb_t __far *heap_chunk = FARPTR(memory_base,0);
+    struct mcb_t __far *new_chunk;
     unsigned long heap_chunk_ptr;
     char __far *area;
     unsigned int i,j;
@@ -197,31 +204,34 @@ void __far *kfalloc(unsigned long size) {
     /* convert size into paragraphs */
     unsigned int paras = PARA(size);
 
-    for(;;) {
-        if ((heap_chunk->free) && (heap_chunk->size == paras)) {
+    for (;;) {
+        if (heap_chunk->type!='M' && heap_chunk->type!='Z')
+            kpanic(memerror);
+
+        if ((!heap_chunk->owner) && (heap_chunk->size == paras)) {
             /* simply mark heap_chunk as not free */
-            heap_chunk->free = !heap_chunk->free;
-            area = FARPTR(SEGMENTOF(heap_chunk) + HEAP_CHUNK_SIZE,0);
+            heap_chunk->owner = owner;
+            area = FARPTR(SEGMENTOF(heap_chunk) + HEAP_CHUNK_SIZE, 0);
             break;
-        } else if ((heap_chunk->free) && (heap_chunk->size >= (paras + HEAP_CHUNK_SIZE))) {
+        } else if ((heap_chunk->owner == 0) && (heap_chunk->size >= (paras + HEAP_CHUNK_SIZE))) {
             /* split off a new heap_chunk */
             new_chunk = FARPTR(SEGMENTOF(heap_chunk) + paras + HEAP_CHUNK_SIZE, 0);
-            new_chunk->free = 1;
+            new_chunk->type = heap_chunk->type;
+            new_chunk->owner = 0;
             new_chunk->size = heap_chunk->size - (paras + HEAP_CHUNK_SIZE);
-            new_chunk->prev_chunk = SEGMENTOF(heap_chunk);
             /* resize the old chunk */
-            heap_chunk->free = !heap_chunk->free;
+            heap_chunk->type = 'M';
+            heap_chunk->owner = owner;
             heap_chunk->size = paras;
-            /* tell the next chunk where the old chunk is now */
-            next_chunk = FARPTR(SEGMENTOF(new_chunk) + new_chunk->size + HEAP_CHUNK_SIZE, 0);
-            next_chunk->prev_chunk = SEGMENTOF(new_chunk);
-            area = FARPTR(SEGMENTOF(heap_chunk)+HEAP_CHUNK_SIZE, 0);
+            area = FARPTR(SEGMENTOF(heap_chunk) + HEAP_CHUNK_SIZE, 0);
             break;
         } else {
+            if (heap_chunk->type == 'Z')
+                return (void __far*)0;
             heap_chunk_ptr = SEGMENTOF(heap_chunk);
             heap_chunk_ptr += heap_chunk->size + HEAP_CHUNK_SIZE;
             if (heap_chunk_ptr >= memory_end)
-                return (void __far*)0;
+                kpanic(memerror);
             heap_chunk = FARPTR(heap_chunk_ptr,0);
             continue;
         }
@@ -245,7 +255,7 @@ void __far *kfalloc(unsigned long size) {
 
 void kffree(void __far *addr) {
     unsigned int heap_chunk_ptr = SEGMENTOF(addr);
-    __far struct heap_chunk_t *heap_chunk, *next_chunk, *prev_chunk;
+    __far struct mcb_t *heap_chunk, *next_chunk, *prev_chunk;
 
     heap_chunk_ptr -= HEAP_CHUNK_SIZE;
     heap_chunk = FARPTR(heap_chunk_ptr,0);
@@ -253,28 +263,34 @@ void kffree(void __far *addr) {
     heap_chunk_ptr += heap_chunk->size + HEAP_CHUNK_SIZE;
     next_chunk = FARPTR(heap_chunk_ptr,0);
 
-    prev_chunk = FARPTR(heap_chunk->prev_chunk,0);
+    /* abort if MCB isn't valid */
+    if (heap_chunk->type != 'M' && heap_chunk->type != 'Z') return;
+
+    prev_chunk = FARPTR(memory_base,0);
+    /* walk through memory blocks, since list ist only singly linked :( */
+    if (SEGMENTOF(heap_chunk) != memory_base) {
+        while (SEGMENTOF(prev_chunk) + prev_chunk->size + HEAP_CHUNK_SIZE != SEGMENTOF(heap_chunk)) {
+            /* abort if MCB isn't in chain */
+            if (prev_chunk->type == 'Z') return;
+            /* panic if chain is corrupted */
+            if (prev_chunk->type != 'M' || SEGMENTOF(prev_chunk) > memory_end)
+                kpanic(memerror);
+            /* get our next element */
+            prev_chunk = FARPTR(SEGMENTOF(prev_chunk) + prev_chunk->size + HEAP_CHUNK_SIZE, 0);
+        }
+    }
 
     /* flag chunk as free */
-    heap_chunk->free = 1;
+    heap_chunk->owner = 0;
 
     /* if the next chunk is free as well, fuse the chunks into a single one */
-    if (SEGMENTOF(next_chunk) >= memory_end && next_chunk->free) {
+    if (heap_chunk->type != 'Z' && next_chunk->owner == 0) {
         heap_chunk->size += next_chunk->size + HEAP_CHUNK_SIZE;
-        /* update next chunk ptr */
-        next_chunk = FARPTR(SEGMENTOF(next_chunk) + next_chunk->size + HEAP_CHUNK_SIZE, 0);
-        /* update new next chunk's prev to ourselves */
-        next_chunk->prev_chunk = SEGMENTOF(heap_chunk);
     }
 
     /* if the previous chunk is free as well, fuse the chunks into a single one */
-    if (prev_chunk) {       /* if its not the first chunk */
-        if (prev_chunk->free) {
-            prev_chunk->size += heap_chunk->size + HEAP_CHUNK_SIZE;
-            /* notify the next chunk of the change */
-            if (SEGMENTOF(next_chunk) < memory_end)
-                next_chunk->prev_chunk = SEGMENTOF(prev_chunk);
-        }
+    if (SEGMENTOF(heap_chunk) != memory_base && prev_chunk->owner == 0) {       /* if its not the first chunk */
+        prev_chunk->size += heap_chunk->size + HEAP_CHUNK_SIZE;
     }
 
     return;
@@ -282,11 +298,11 @@ void kffree(void __far *addr) {
 
 void __far *kfrealloc(void __far *addr, unsigned long new_size) {
     unsigned int heap_chunk_ptr = SEGMENTOF(addr);
-    struct heap_chunk_t __far *heap_chunk;
+    struct mcb_t __far *heap_chunk;
     char __far *new_ptr;
 
     if (!addr)
-        return kfalloc(new_size);
+        return kfalloc(new_size,8); /* TODO: replace with current PSP? */
 
     if (!new_size) {
         kffree(addr);
@@ -296,7 +312,7 @@ void __far *kfrealloc(void __far *addr, unsigned long new_size) {
     heap_chunk_ptr -= HEAP_CHUNK_SIZE;
     heap_chunk = FARPTR(heap_chunk_ptr,0);
 
-    if ((new_ptr = kfalloc(new_size)) == 0)
+    if ((new_ptr = kfalloc(new_size,heap_chunk->owner)) == 0)
         return (void __far*)0;
 
     /* convert size to paragraphs */

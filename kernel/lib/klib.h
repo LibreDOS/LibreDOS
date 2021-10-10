@@ -10,6 +10,7 @@ void kprn_ul(unsigned long);
 void kprn_x(unsigned long);
 void kputs(char *);
 void kgets(char *, int);
+void kpanic(char *);
 
 void *knmemcpy(void *, void *, unsigned int);
 void __far *kfmemcpy(void __far*, void __far*, unsigned long);
@@ -17,7 +18,7 @@ void __far *kfmemcpy(void __far*, void __far*, unsigned long);
 void init_knalloc(void);
 void init_kfalloc(void);
 void *knalloc(unsigned int);
-void __far *kfalloc(unsigned long);
+void __far *kfalloc(unsigned long, unsigned int);
 void kffree(void __far*);
 void __far *kfrealloc(void __far*, unsigned long);
 
