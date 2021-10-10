@@ -213,7 +213,7 @@ void __far *kfalloc(unsigned long size, unsigned int owner) {
             heap_chunk->owner = owner;
             area = FARPTR(SEGMENTOF(heap_chunk) + HEAP_CHUNK_SIZE, 0);
             break;
-        } else if ((heap_chunk->owner == 0) && (heap_chunk->size >= (paras + HEAP_CHUNK_SIZE))) {
+        } else if ((!heap_chunk->owner) && (heap_chunk->size >= (paras + HEAP_CHUNK_SIZE))) {
             /* split off a new heap_chunk */
             new_chunk = FARPTR(SEGMENTOF(heap_chunk) + paras + HEAP_CHUNK_SIZE, 0);
             new_chunk->type = heap_chunk->type;
@@ -284,12 +284,12 @@ void kffree(void __far *addr) {
     heap_chunk->owner = 0;
 
     /* if the next chunk is free as well, fuse the chunks into a single one */
-    if (heap_chunk->type != 'Z' && next_chunk->owner == 0) {
+    if (heap_chunk->type != 'Z' && !next_chunk->owner) {
         heap_chunk->size += next_chunk->size + HEAP_CHUNK_SIZE;
     }
 
     /* if the previous chunk is free as well, fuse the chunks into a single one */
-    if (SEGMENTOF(heap_chunk) != memory_base && prev_chunk->owner == 0) {       /* if its not the first chunk */
+    if (SEGMENTOF(heap_chunk) != memory_base && !prev_chunk->owner) {       /* if its not the first chunk */
         prev_chunk->size += heap_chunk->size + HEAP_CHUNK_SIZE;
     }
 
