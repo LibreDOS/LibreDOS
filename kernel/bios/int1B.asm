@@ -3,6 +3,7 @@ extern key_code
 global int1B
 
 section .text
+cpu 8086
 bits 16
 
 int1B:
