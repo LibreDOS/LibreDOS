@@ -15,6 +15,8 @@ void kmain(void) {
     init_knalloc();
     kputs("  DONE");
 
+    bios_init();
+
     kputs("\r\nAllocating 256 bytes...");
     buf = knalloc(256);
     kputs("  DONE");

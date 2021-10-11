@@ -44,8 +44,10 @@ _start:
     ; legacy boot sector entrypoint signature
     align 2
     dd 0x55AA55AA
-  .realmode:
+    ; fix code segment
+    jmp 0x0000:.realmode
 
+  .realmode:
     xor ax, ax
     mov ds, ax
     mov es, ax

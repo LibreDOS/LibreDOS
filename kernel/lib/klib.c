@@ -185,7 +185,7 @@ void init_kfalloc(void) {
 
     root_chunk = FARPTR(memory_base,0);
 
-    root_chunk->type = 'M';
+    root_chunk->type = 'Z';
     root_chunk->owner = 0;
     root_chunk->size = memory_end - (memory_base + HEAP_CHUNK_SIZE);
 
