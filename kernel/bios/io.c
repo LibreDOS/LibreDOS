@@ -1,4 +1,5 @@
 #include <stdint.h>
+#include <ptrdef.h>
 #include <bios/io.h>
 
 static unsigned int com_ports;
@@ -19,7 +20,7 @@ void bios_init(void) {
         asm volatile ("int $0x17" :: "a" (0x0100), "d" (i));
     /* install interrupt 1Bh handler */
     asm volatile ("cli");
-    ((void __far**)0)[0x1B] = int1B;
+    ivt[0x1B] = int1B;
     asm volatile ("sti");
 }
 

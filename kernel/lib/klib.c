@@ -1,3 +1,4 @@
+#include <ptrdef.h>
 #include <bios/io.h>
 #include <lib/klib.h>
 
@@ -110,10 +111,10 @@ void *knmemcpy(void *dest, void *src, unsigned int count) {
     return dest;
 }
 
-void __far *kfmemcpy(void __far *dest, void __far *src, unsigned long count) {
+void far *kfmemcpy(void far *dest, void far *src, unsigned long count) {
     unsigned int i,j;
-    char __far *destptr = dest;
-    char __far *srcptr = src;
+    char far *destptr = dest;
+    char far *srcptr = src;
 
     for (i = 0; i < (count >> 16); i++) {
         j = 0;
@@ -193,12 +194,12 @@ void init_kfalloc(void) {
     return;
 }
 
-void __far *kfalloc(unsigned long size, unsigned int owner) {
+void far *kfalloc(unsigned long size, unsigned int owner) {
     /* search for a big enough, free heap chunk */
-    struct mcb_t __far *heap_chunk = FARPTR(memory_base,0);
-    struct mcb_t __far *new_chunk;
+    struct mcb_t far *heap_chunk = FARPTR(memory_base,0);
+    struct mcb_t far *new_chunk;
     unsigned long heap_chunk_ptr;
-    char __far *area;
+    char far *area;
     unsigned int i,j;
 
     /* convert size into paragraphs */
@@ -227,7 +228,7 @@ void __far *kfalloc(unsigned long size, unsigned int owner) {
             break;
         } else {
             if (heap_chunk->type == 'Z')
-                return (void __far*)0;
+                return (void far*)0;
             heap_chunk_ptr = SEGMENTOF(heap_chunk);
             heap_chunk_ptr += heap_chunk->size + HEAP_CHUNK_SIZE;
             if (heap_chunk_ptr >= memory_end)
@@ -238,7 +239,7 @@ void __far *kfalloc(unsigned long size, unsigned int owner) {
     }
 
     /* zero out memory */
-    char __far *areaseg = area;
+    char far *areaseg = area;
     for (i = 0; i < (size >> 16); i++) {
         j=0;
         do {
@@ -253,9 +254,9 @@ void __far *kfalloc(unsigned long size, unsigned int owner) {
     return area;
 }
 
-void kffree(void __far *addr) {
+void kffree(void far *addr) {
     unsigned int heap_chunk_ptr = SEGMENTOF(addr);
-    __far struct mcb_t *heap_chunk, *next_chunk, *prev_chunk;
+    far struct mcb_t *heap_chunk, *next_chunk, *prev_chunk;
 
     heap_chunk_ptr -= HEAP_CHUNK_SIZE;
     heap_chunk = FARPTR(heap_chunk_ptr,0);
@@ -296,24 +297,24 @@ void kffree(void __far *addr) {
     return;
 }
 
-void __far *kfrealloc(void __far *addr, unsigned long new_size) {
+void far *kfrealloc(void far *addr, unsigned long new_size) {
     unsigned int heap_chunk_ptr = SEGMENTOF(addr);
-    struct mcb_t __far *heap_chunk;
-    char __far *new_ptr;
+    struct mcb_t far *heap_chunk;
+    char far *new_ptr;
 
     if (!addr)
         return kfalloc(new_size,8); /* TODO: replace with current PSP? */
 
     if (!new_size) {
         kffree(addr);
-        return (void __far*)0;
+        return (void far*)0;
     }
 
     heap_chunk_ptr -= HEAP_CHUNK_SIZE;
     heap_chunk = FARPTR(heap_chunk_ptr,0);
 
     if ((new_ptr = kfalloc(new_size,heap_chunk->owner)) == 0)
-        return (void __far*)0;
+        return (void far*)0;
 
     /* convert size to paragraphs */
     unsigned int paras = PARA(new_size);

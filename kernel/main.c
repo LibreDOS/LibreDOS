@@ -1,13 +1,17 @@
 #include <stdint.h>
+#include <ptrdef.h>
 #include <bios/io.h>
 #include <bios/disk.h>
 #include <lib/klib.h>
 
+extern void int00(void);
+extern void int01(void);
+extern void int03(void);
+extern void int04(void);
+
 void kmain(void) {
     char *buf;
-    char __far *seg;
-    //long i;
-    //int c;
+    char far *seg;
 
     kputs("Welcome to LibreDOS!\r\n");
 
@@ -15,7 +19,16 @@ void kmain(void) {
     init_knalloc();
     kputs("  DONE");
 
+    kputs("\r\nInitializing I/O ...");
     bios_init();
+
+    kputs("\r\nInitializing Interrupts");
+    asm volatile ("cli");
+    ivt[0] = int00;
+    ivt[1] = int01;
+    ivt[3] = int03;
+    ivt[4] = int04;
+    asm volatile ("sti");
 
     kputs("\r\nAllocating 256 bytes...");
     buf = knalloc(256);
