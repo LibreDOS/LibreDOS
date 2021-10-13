@@ -138,7 +138,7 @@ extern symbol bss_end;
 static unsigned int memory_base;
 static unsigned int memory_end;
 static int inited = 0;
-static char memerror[] = "\r\nMemory allocation error!\r\n";
+static char memerror[] = "\r\nMemory allocation error\r\n";
 
 /* DOS-style MCB */
 __attribute__((packed)) struct mcb_t {

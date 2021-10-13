@@ -1,3 +1,4 @@
+extern io_stack
 extern data_end
 extern bss_end
 
@@ -5,7 +6,7 @@ extern kmain
 
 global _start
 
-%define target_address 0x1500
+%define target_address 0x0B00
 %define load_address 0x200000
 
 section .text
@@ -52,7 +53,7 @@ _start:
     mov ds, ax
     mov es, ax
     mov ss, ax
-    mov sp, target_address
+    mov sp, io_stack ; use I/O stack for initialization
 
     sti
 
