@@ -49,14 +49,14 @@ void kmain(void) {
     kputs("  DONE");
 
     kputs("\r\nAllocating 128k bytes...");
-    seg = kfalloc(131072,8);
+    seg = kfalloc(131072, 8);
     kputs("  DONE");
 
     kputs("\r\nkfalloc returned seg = ");
     kprn_x(SEGMENTOF(seg));
 
     kputs("\r\nAllocating 128k bytes...");
-    seg = kfalloc(131072,8);
+    seg = kfalloc(131072, 8);
     kputs("  DONE");
 
     kputs("\r\nkfalloc returned seg = ");

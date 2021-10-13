@@ -228,7 +228,7 @@ void far *kfalloc(unsigned long size, unsigned int owner) {
             break;
         } else {
             if (heap_chunk->type == 'Z')
-                return (void far*)0;
+                return (void far *)0;
             heap_chunk_ptr = SEGMENTOF(heap_chunk);
             heap_chunk_ptr += heap_chunk->size + HEAP_CHUNK_SIZE;
             if (heap_chunk_ptr >= memory_end)
@@ -307,14 +307,14 @@ void far *kfrealloc(void far *addr, unsigned long new_size) {
 
     if (!new_size) {
         kffree(addr);
-        return (void far*)0;
+        return (void far *)0;
     }
 
     heap_chunk_ptr -= HEAP_CHUNK_SIZE;
     heap_chunk = FARPTR(heap_chunk_ptr,0);
 
     if ((new_ptr = kfalloc(new_size,heap_chunk->owner)) == 0)
-        return (void far*)0;
+        return (void far *)0;
 
     /* convert size to paragraphs */
     unsigned int paras = PARA(new_size);
