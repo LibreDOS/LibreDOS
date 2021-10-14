@@ -3,6 +3,8 @@ extern io_stack
 extern dsk_stack
 extern divideError
 
+extern abort
+
 global int00
 global int01
 global int03
@@ -10,7 +12,6 @@ global int04
 global int20
 global int21
 global call5
-global last_ss
 global last_sp
 
 %define max_cpm 0x24
@@ -40,14 +41,52 @@ int20:
     xor ah, ah ; emulate int 21h call
 
 int21:
-    cmp ah, (dispatch_table.end - dispatch_table) / 4 ; check if function call in range
+    cmp ah, (dispatch_table.end - dispatch_table) / 2 ; check if function call in range
     jb short .valid_call
   .invalid_call:
     xor al, al ; clear al, if not
     iret
   .valid_call:
-    mov word [cs:setup_return], dispatch ; setup stack and dispatch function
-    jmp setup_stack
+    call create_frame
+  .setup_stack:
+    cld ; clear direction flag
+    mov [cs:last_ss], ss ; save user ss:sp
+    mov [cs:last_sp], sp
+    test ah, ah ; use IOSTACK for functions 0x01 to 0x0C, and DSKSTACK for everything else
+    jz short .dskstack
+    cmp ah, 0x0C
+    ja short .dskstack
+  ; I/O stack
+    mov ss, [cs:kernel_cs]
+    mov sp, io_stack
+    jmp .dispatch
+  .dskstack:
+    mov ss, [cs:kernel_cs]
+    mov sp, dsk_stack
+  .dispatch:
+    sti ; interrupts can happen now
+    xor bx, bx ; set ds and es
+    mov ds, bx
+    mov es, bx
+    mov al, ah ; convert function number to offset in dispatch table
+    cbw ; works as long as function smaller than 0x80
+    mov bx, ax
+    shl bx, 1
+    shl bx, 1
+    cli ; prevent interrupts from happening
+    mov ss, [cs:last_ss]
+    mov sp, [cs:last_sp]
+    call near [bx+dispatch_table] ; dispatch the actual function (hopefully it's "void func(void)")
+    pop ax ; restore everything
+    pop bx
+    pop cx
+    pop dx
+    pop si
+    pop di
+    pop bp
+    pop ds
+    pop es
+    iret
 
 call5:
     pop word [cs:last_ss] ; discard far call offset
@@ -59,52 +98,12 @@ call5:
     push word [cs:last_sp]
     cmp cl, max_cpm ; see if it is one of the CP/M calls
     ja short int21.invalid_call
-    mov word [cs:setup_return], .setfunc
-    call setup_stack ; store everything
-  .setfunc:
+    call create_frame ; create stack frame
     mov ah, cl ; put function number in ah
+    jmp int21.setup_stack
 
-dispatch:
-    xor bx, bx ; set ds and es
-    mov ds, bx
-    mov es, bx
-    mov al, ah ; convert function number to offset in dispatch table
-    cbw ; works as long as function smaller than 0x80
-    mov ax, bx
-    shl bx, 1
-    shl bx, 1
-    call near [bx+dispatch_table] ; dispatch the actual function (hopefully it's "void func(void)")
-    pop ax ; restore everything
-    pop bx
-    pop cx
-    pop dx
-    pop si
-    pop di
-    pop bp
-    pop ds
-    pop es
-    cli
-    mov ss, [cs:last_ss]
-    mov sp, [cs:last_sp]
-    iret
-
-; make sure you set setup_return before jumping to this
-setup_stack:
-    mov [cs:last_ss], ss ; save user ss:sp
-    mov [cs:last_sp], sp
-    test ah, ah ; use IOSTACK for functions 0x01 to 0x0C, and DSKSTACK for everything else
-    jz short .dskstack
-    cmp ah, 0x0C
-    ja short .dskstack
-  ; I/O stack
-    mov ss, [cs:kernel_cs]
-    mov sp, io_stack
-    jmp .createstack
-  .dskstack:
-    mov ss, [cs:kernel_cs]
-    mov sp, dsk_stack
-  .createstack:
-    sti ; interrupts can now happen, since we set up the stack
+create_frame:
+    pop word [cs:setup_return]
     push es ; you know the drill
     push ds
     push bp
@@ -120,12 +119,12 @@ section .data
 
 ; function dispatch table
 dispatch_table:
-    dw 0x0000
+    dw abort
   .end:
 
 ; storage for caller stack
-last_ss dw 0x0000
 last_sp dw 0x0000
+last_ss dw 0x0000
 ; temporary storage for stack setup return address
 setup_return dw 0x0000
 ; stores the kernel code segment
