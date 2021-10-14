@@ -124,11 +124,11 @@ create_frame:
     jmp near [cs:setup_return] ; return
 
 int25:
-    mov word [cs:setup_return], disk_read
+    mov word [cs:temp_vector], disk_read
     jmp disk_dispatch
 
 int26:
-    mov word [cs:setup_return], disk_write
+    mov word [cs:temp_vector], disk_write
 
 ; uses setup_return as jump vector
 disk_dispatch:
@@ -142,20 +142,25 @@ disk_dispatch:
     xor ax, ax ; set ds and es
     mov ds, ax
     mov es, ax
-    call [setup_return]
+    call [temp_vector]
     jmp return
 
-section .data
+section .rodata
 
 ; function dispatch table
 dispatch_table:
     dw abort
   .end:
 
-; storage for caller stack
-last_sp dw 0x0000
-last_ss dw 0x0000
-; temporary storage for stack setup return address
-setup_return dw 0x0000
 ; stores the kernel code segment
 kernel_cs dw 0x0000
+
+section .bss
+
+; storage for caller stack
+last_sp resw 1
+last_ss resw 1
+; temporary storage for create_frame return address
+setup_return resw 1
+; temporary storage for absolute disk I/O call vector
+temp_vector resw 1

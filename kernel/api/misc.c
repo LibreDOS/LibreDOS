@@ -4,7 +4,7 @@
 #include<api/stack.h>
 
 void abort(void) {
-    kputs("abort!!!");//for (;;);
+    for (;;);
 }
 
 void divide_error(void) {

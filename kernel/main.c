@@ -10,6 +10,8 @@ extern void int03(void);
 extern void int04(void);
 extern void int20(void);
 extern void int21(void);
+extern void int25(void);
+extern void int26(void);
 
 void kmain(void) {
     char *buf;
@@ -26,8 +28,10 @@ void kmain(void) {
 
     kputs("\r\nInitializing Interrupts");
     asm volatile ("cli");
-    ivt[0x21] = int21;
     ivt[0x20] = int20;
+    ivt[0x21] = int21;
+    ivt[0x25] = int25;
+    ivt[0x26] = int26;
     ivt[0] = int00;
     ivt[1] = int01;
     ivt[3] = int03;
@@ -65,8 +69,6 @@ void kmain(void) {
 
     kputs("\r\nkfalloc returned seg = ");
     kprn_x(SEGMENTOF(seg));
-
-    asm volatile ("int $0x21" :: "a" (0));
 
     for (;;) {
         kputs("\r\nLibreDOS> ");

@@ -182,7 +182,7 @@ void *knalloc(unsigned int size) {
 /* knalloc should not be called after this */
 void init_kfalloc(void) {
     /* creates the first memory chunk */
-    struct mcb_t __far *root_chunk;
+    struct mcb_t far *root_chunk;
 
     root_chunk = FARPTR(memory_base,0);
 
