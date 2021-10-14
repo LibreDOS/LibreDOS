@@ -26,12 +26,12 @@ void kmain(void) {
 
     kputs("\r\nInitializing Interrupts");
     asm volatile ("cli");
+    ivt[0x21] = int21;
+    ivt[0x20] = int20;
     ivt[0] = int00;
     ivt[1] = int01;
     ivt[3] = int03;
     ivt[4] = int04;
-    ivt[0x20] = int20;
-    ivt[0x21] = int21;
     asm volatile ("sti");
 
     kputs("\r\nAllocating 256 bytes...");
@@ -66,7 +66,7 @@ void kmain(void) {
     kputs("\r\nkfalloc returned seg = ");
     kprn_x(SEGMENTOF(seg));
 
-    asm volatile ("int $0x21" :: "a" (0x23), "b" (0x2489), "c" (0x2394), "d" (0x9849));
+    asm volatile ("int $0x21" :: "a" (0));
 
     for (;;) {
         kputs("\r\nLibreDOS> ");

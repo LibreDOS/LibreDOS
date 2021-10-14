@@ -1,7 +1,9 @@
 ; API entry points and some other interrupt vectors
 extern io_stack
 extern dsk_stack
-extern divideError
+extern divide_error
+extern disk_read
+extern disk_write
 
 extern abort
 
@@ -11,9 +13,12 @@ global int03
 global int04
 global int20
 global int21
+global int25
+global int26
 global call5
 global last_sp
 
+%define max_char 0x0C
 %define max_cpm 0x24
 
 section .text
@@ -22,8 +27,9 @@ bits 16
 
 ; divide by zero interrupt
 int00:
-    call divideError
-    iret ; Execution shouldn't reach this point!
+    cld
+    call divide_error
+    jmp $
 
 ; single-step interrupt
 int01:
@@ -54,7 +60,7 @@ int21:
     mov [cs:last_sp], sp
     test ah, ah ; use IOSTACK for functions 0x01 to 0x0C, and DSKSTACK for everything else
     jz short .dskstack
-    cmp ah, 0x0C
+    cmp ah, max_char
     ja short .dskstack
   ; I/O stack
     mov ss, [cs:kernel_cs]
@@ -73,10 +79,12 @@ int21:
     mov bx, ax
     shl bx, 1
     shl bx, 1
+    call near [bx+dispatch_table] ; dispatch the actual function (hopefully it's "void func(void)")
+
+return:
     cli ; prevent interrupts from happening
     mov ss, [cs:last_ss]
     mov sp, [cs:last_sp]
-    call near [bx+dispatch_table] ; dispatch the actual function (hopefully it's "void func(void)")
     pop ax ; restore everything
     pop bx
     pop cx
@@ -114,6 +122,28 @@ create_frame:
     push bx
     push ax
     jmp near [cs:setup_return] ; return
+
+int25:
+    mov word [cs:setup_return], disk_read
+    jmp disk_dispatch
+
+int26:
+    mov word [cs:setup_return], disk_write
+
+; uses setup_return as jump vector
+disk_dispatch:
+    call create_frame
+    cld
+    mov [cs:last_ss], ss ; save user ss:sp
+    mov [cs:last_sp], sp
+    mov ss, [cs:kernel_cs] ; use disk stack (of course)
+    mov sp, dsk_stack
+    sti ; interrupts can happen now
+    xor ax, ax ; set ds and es
+    mov ds, ax
+    mov es, ax
+    call [setup_return]
+    jmp return
 
 section .data
 
