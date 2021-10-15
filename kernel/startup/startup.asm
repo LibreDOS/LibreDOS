@@ -49,7 +49,7 @@ _start:
     jmp 0x0000:.realmode
 
   .realmode:
-    xor ax, ax
+    mov ax, cs
     mov ds, ax
     mov es, ax
     mov ss, ax

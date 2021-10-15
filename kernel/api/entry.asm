@@ -16,6 +16,8 @@ global int21
 global int25
 global int26
 global call5
+global int23_dispatch
+global int24_dispatch
 global last_sp
 
 %define max_char 0x0C
@@ -43,9 +45,11 @@ int03:
 int04:
     iret
 
+; terminate interrupt
 int20:
     xor ah, ah ; emulate int 21h call
 
+; main API entry
 int21:
     cmp ah, (dispatch_table.end - dispatch_table) / 2 ; check if function call in range
     jb short .valid_call
@@ -54,48 +58,30 @@ int21:
     iret
   .valid_call:
     call create_frame
-  .setup_stack:
-    cld ; clear direction flag
-    mov [cs:last_ss], ss ; save user ss:sp
-    mov [cs:last_sp], sp
     test ah, ah ; use IOSTACK for functions 0x01 to 0x0C, and DSKSTACK for everything else
     jz short .dskstack
     cmp ah, max_char
     ja short .dskstack
   ; I/O stack
-    mov ss, [cs:kernel_cs]
+    push cs
+    pop ss
     mov sp, io_stack
     jmp .dispatch
   .dskstack:
-    mov ss, [cs:kernel_cs]
+    push cs
+    pop ss
     mov sp, dsk_stack
   .dispatch:
     sti ; interrupts can happen now
-    xor bx, bx ; set ds and es
-    mov ds, bx
-    mov es, bx
     mov al, ah ; convert function number to offset in dispatch table
     cbw ; works as long as function smaller than 0x80
     mov bx, ax
     shl bx, 1
-    shl bx, 1
     call near [bx+dispatch_table] ; dispatch the actual function (hopefully it's "void func(void)")
-
-return:
-    cli ; prevent interrupts from happening
-    mov ss, [cs:last_ss]
-    mov sp, [cs:last_sp]
-    pop ax ; restore everything
-    pop bx
-    pop cx
-    pop dx
-    pop si
-    pop di
-    pop bp
-    pop ds
-    pop es
+    call restore_frame
     iret
 
+; call 5 entry
 call5:
     pop word [cs:last_ss] ; discard far call offset
     pop word [cs:last_ss] ; misuse last_ss to store far call segment
@@ -106,12 +92,32 @@ call5:
     push word [cs:last_sp]
     cmp cl, max_cpm ; see if it is one of the CP/M calls
     ja short int21.invalid_call
-    call create_frame ; create stack frame
-    mov ah, cl ; put function number in ah
-    jmp int21.setup_stack
+    mov ah, cl ; put function number in ah (ah is not used in 8080 machine translation)
+    jmp int21.valid_call
+
+; absolute disk read
+int25:
+    call create_frame
+    mov word [temp_vector], disk_read
+    jmp disk_dispatch
+
+; absolute disk write
+int26:
+    call create_frame
+    mov word [temp_vector], disk_write
+
+; uses temp_vector as jump vector
+disk_dispatch:
+    push cs ; use disk stack (of course)
+    pop ss
+    mov sp, dsk_stack
+    sti ; interrupts can happen now
+    call [temp_vector]
+    call restore_frame
+    iret
 
 create_frame:
-    pop word [cs:setup_return]
+    pop word [cs:temp_vector]
     push es ; you know the drill
     push ds
     push bp
@@ -121,29 +127,60 @@ create_frame:
     push cx
     push bx
     push ax
-    jmp near [cs:setup_return] ; return
+    mov bx, cs ; set ds and es
+    mov ds, bx
+    mov es, bx
+    mov [last_ss], ss ; save user ss:sp
+    mov [last_sp], sp
+    cld ; clear direction flag
+    jmp near [temp_vector] ; return
 
-int25:
-    mov word [cs:temp_vector], disk_read
-    jmp disk_dispatch
+restore_frame:
+    cli ; prevent interrupts from happening
+    pop word [temp_vector]
+    mov ss, [last_ss] ; restore user stack
+    mov sp, [last_sp]
+    pop ax ; restore registers
+    pop bx
+    pop cx
+    pop dx
+    pop si
+    pop di
+    pop bp
+    pop ds
+    pop es
+    jmp near [cs:temp_vector] ; return
 
-int26:
-    mov word [cs:temp_vector], disk_write
+; do ctrl+c dispatch
+int23_dispatch:
+    call restore_frame ; restore user stack
+    int 23h ; let the Ctrl+C handler decide
+    jmp int21 ; DOS 1.x just repeats the system call (abort by clearing ah)
 
-; uses setup_return as jump vector
-disk_dispatch:
-    call create_frame
-    cld
-    mov [cs:last_ss], ss ; save user ss:sp
-    mov [cs:last_sp], sp
-    mov ss, [cs:kernel_cs] ; use disk stack (of course)
-    mov sp, dsk_stack
-    sti ; interrupts can happen now
-    xor ax, ax ; set ds and es
-    mov ds, ax
-    mov es, ax
-    call [temp_vector]
-    jmp return
+; do critical error dispatch
+int24_dispatch:
+    push bp
+    mov bp, sp
+    push bx
+    push si
+    push di
+    mov ax, [bp+2] ; obtain register values
+    mov di, [bp+4]
+    cli ; prevent any silly things from happening (especially while using critical_sp)
+    mov [critical_sp], sp ; save kernel sp
+    mov ss, [last_ss] ; restore user sp
+    mov sp, [last_sp]
+    int 24h ; pass control to critical error handler
+    mov cx, cs ; reset segment registers
+    mov ds, cx
+    mov es, cx
+    mov ss, cx
+    mov sp, [critical_sp]
+    sti
+    pop di
+    pop si
+    pop bp
+    ret ; al already contains the return code!
 
 section .rodata
 
@@ -152,15 +189,12 @@ dispatch_table:
     dw abort
   .end:
 
-; stores the kernel code segment
-kernel_cs dw 0x0000
-
 section .bss
 
 ; storage for caller stack
 last_sp resw 1
 last_ss resw 1
-; temporary storage for create_frame return address
-setup_return resw 1
-; temporary storage for absolute disk I/O call vector
+; storage for kernel stack during critical error
+critical_sp resw 1
+; temporary storage for jump/return vectors
 temp_vector resw 1
