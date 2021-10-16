@@ -3,13 +3,14 @@
 #include<lib/klib.h>
 #include<api/stack.h>
 
+extern void int23_dispatch(void);
+
 void abort(void) {
     for (;;);
 }
 
 void divide_error(void) {
     kputs("\r\nDivide overflow\r\n");
-    asm volatile ("int $0x20");
 }
 
 void disk_read(void) {

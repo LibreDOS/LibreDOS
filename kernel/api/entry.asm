@@ -7,12 +7,11 @@ extern disk_write
 
 extern abort
 
+global int_stub
 global int00
-global int01
-global int03
-global int04
 global int20
 global int21
+global int24
 global int25
 global int26
 global call5
@@ -27,22 +26,27 @@ section .text
 cpu 8086
 bits 16
 
+; interrupt stub
+int_stub:
+    iret
+
 ; divide by zero interrupt
 int00:
     cld
+    push ax
+    push bx
+    push cx
+    push dx
+    push ds
+    mov ax, ss ; ensure ds=ss for GCC-IA16 to be happy
+    mov ds, ax
     call divide_error
-    jmp $
-
-; single-step interrupt
-int01:
-    iret
-
-; breakpoint interrupt
-int03:
-    iret
-
-; overflow interrupt
-int04:
+    pop ds
+    pop dx
+    pop cx
+    pop bx
+    pop ax
+    int 23h
     iret
 
 ; terminate interrupt
@@ -94,6 +98,11 @@ call5:
     ja short int21.invalid_call
     mov ah, cl ; put function number in ah (ah is not used in 8080 machine translation)
     jmp int21.valid_call
+
+; initial int 24h handler
+int24:
+    xor al, al
+    iret
 
 ; absolute disk read
 int25:

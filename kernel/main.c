@@ -4,12 +4,11 @@
 #include <bios/disk.h>
 #include <lib/klib.h>
 
+extern void int_stub(void);
 extern void int00(void);
-extern void int01(void);
-extern void int03(void);
-extern void int04(void);
 extern void int20(void);
 extern void int21(void);
+extern void int24(void);
 extern void int25(void);
 extern void int26(void);
 
@@ -30,12 +29,14 @@ void kmain(void) {
     asm volatile ("cli");
     ivt[0x20] = int20;
     ivt[0x21] = int21;
+    ivt[0x23] = int_stub;
+    ivt[0x24] = int24;
     ivt[0x25] = int25;
     ivt[0x26] = int26;
     ivt[0] = int00;
-    ivt[1] = int01;
-    ivt[3] = int03;
-    ivt[4] = int04;
+    ivt[1] = int_stub;
+    ivt[3] = int_stub;
+    ivt[4] = int_stub;
     asm volatile ("sti");
 
     kputs("\r\nAllocating 256 bytes...");
