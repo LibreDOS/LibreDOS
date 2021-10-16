@@ -67,6 +67,11 @@ unsigned int bios_status(void) {
         return 0;
 }
 
+void bios_flush(void) {
+    while (bios_status())
+        bios_getchar();
+}
+
 void bios_com_putchar(unsigned int port, char c) {
     if (port >= com_ports) return;
     asm volatile ("int $0x14" :: "a" (0x0100 + c), "d" (port));

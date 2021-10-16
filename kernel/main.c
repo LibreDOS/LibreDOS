@@ -3,6 +3,7 @@
 #include <bios/io.h>
 #include <bios/disk.h>
 #include <lib/klib.h>
+#include <lib/alloc.h>
 
 extern void int_stub(void);
 extern void int00(void);

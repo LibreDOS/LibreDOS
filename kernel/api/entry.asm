@@ -40,7 +40,7 @@ int00:
     push ds
     mov ax, ss ; ensure ds=ss for GCC-IA16 to be happy
     mov ds, ax
-    call divide_error
+    call divide_error ; works as long as no global variables are accessed!
     pop ds
     pop dx
     pop cx
@@ -168,13 +168,14 @@ int23_dispatch:
 
 ; do critical error dispatch
 int24_dispatch:
+    xchg bx, bx
     push bp
     mov bp, sp
     push bx
     push si
     push di
-    mov ax, [bp+2] ; obtain register values
-    mov di, [bp+4]
+    mov ax, [bp+4] ; obtain register values
+    mov di, [bp+6]
     cli ; prevent any silly things from happening (especially while using critical_sp)
     mov [critical_sp], sp ; save kernel sp
     mov ss, [last_ss] ; restore user sp
@@ -188,6 +189,7 @@ int24_dispatch:
     sti
     pop di
     pop si
+    pop bx
     pop bp
     ret ; al already contains the return code!
 

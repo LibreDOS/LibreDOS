@@ -17,7 +17,6 @@ enum error_response_t {
     ignore = 0, retry = 1, abort = 2
 };
 
-void check_control_c(void);
 enum error_response_t throw_disk_error(uint8_t, enum disk_rw_t, enum disk_location_t, enum error_code_t);
 enum error_response_t throw_fat_error();
 
