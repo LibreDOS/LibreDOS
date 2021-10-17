@@ -1,10 +1,11 @@
 #include<stdint.h>
 #include<ptrdef.h>
-#include<lib/klib.h>
 #include<api/stack.h>
+#include<api/chario.h>
 
 /* int 21h ah=0x00 / int 20h */
 void abort(void) {
+    /* TODO implement */
     for (;;);
 }
 

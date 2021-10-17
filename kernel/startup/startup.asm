@@ -1,4 +1,5 @@
 extern io_stack
+extern dsk_stack ; TODO temporary
 extern data_end
 extern bss_end
 
@@ -53,7 +54,7 @@ _start:
     mov ds, ax
     mov es, ax
     mov ss, ax
-    mov sp, io_stack ; use I/O stack for initialization
+    mov sp, dsk_stack ; use I/O stack for initialization - (TODO using disk stack to test character I/O)
 
     sti
 

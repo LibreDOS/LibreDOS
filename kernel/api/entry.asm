@@ -6,6 +6,19 @@ extern disk_read
 extern disk_write
 
 extern abort
+extern getchar_echo
+extern getchar_echo
+extern putchar
+extern aux_getchar
+extern aux_putchar
+extern prn_putchar
+extern direct_io
+extern direct_input
+extern getchar_no_echo
+extern puts
+extern gets
+extern con_status
+extern con_flush
 
 global int_stub
 global int00
@@ -168,7 +181,6 @@ int23_dispatch:
 
 ; do critical error dispatch
 int24_dispatch:
-    xchg bx, bx
     push bp
     mov bp, sp
     push bx
@@ -198,6 +210,9 @@ section .rodata
 ; function dispatch table
 dispatch_table:
     dw abort
+    dw getchar_echo, putchar, aux_getchar, aux_putchar
+    dw prn_putchar, direct_io, direct_input, getchar_no_echo
+    dw puts, gets, con_status, con_flush
   .end:
 
 section .bss

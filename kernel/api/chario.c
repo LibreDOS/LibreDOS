@@ -1,75 +1,121 @@
 #include<stdint.h>
 #include<ptrdef.h>
 #include<bios/io.h>
-#include<lib/klib.h>
 #include<api/stack.h>
-#include<api/exep.h>
+#include<api/chario.h>
 
 extern void int23_dispatch(void);
-static char buffer[256];
+static unsigned char buffer[256];
 static int echo_to_printer = 0;
+static unsigned int linepos = 0;
 
-static void handle_control_c(unsigned char key) {
-    if (key =='C'-'@') {
-        kputs("^C\r\n");
-        int23_dispatch();
-    } else if (key == 'P'-'@') {
-        echo_to_printer = !echo_to_printer;
-    }
-}
-
-static void check_control_c(void) {
-    unsigned char key = bios_status() & 0xFF;
-    /* check if ctrl+c, ctrl+p or ctrl+s in keyboard buffer */
+static int handle_control_c(char key) {
     switch (key) {
         case 'C'-'@':
+            bios_putchar('^');
+            bios_putchar('C');
+            bios_putchar('\r');
+            bios_putchar('\n');
+            linepos = 0;
+            int23_dispatch(); /* never returns */
+
         case 'P'-'@':
-            /* discard key from buffer */
-            bios_getchar();
-            /* do appropriate action */
-            handle_control_c(key);
-            break;
+            echo_to_printer = !echo_to_printer;
+            return 1;
+
         case 'S'-'@':
-            /* discard key from buffer */
-            bios_getchar();
-            /* wait for user to press key */
-            handle_control_c(bios_getchar());
-            /* DOS quirks: extended key codes don't get discarted, subsequent ctrl+c isn't detected */
+            key = bios_getchar();
+            if ((key == 'C'-'@') || (key == 'P'-'@')) handle_control_c(key);
     }
+
+    return 0;
 }
 
-static void putchar(char c) {
+static unsigned int status() {
+    unsigned int key;
+    char ascii;
+
+    while (1) {
+        key = bios_status();
+        ascii = key & 0xFF;
+
+        /* check if ctrl+c, ctrl+p or ctrl+s in keyboard buffer */
+        if ((ascii == 'C'-'@') || (ascii == 'P'-'@') || (ascii == 'S'-'@')) {
+            bios_getchar(); /* remove them from buffer */
+            if (handle_control_c(ascii)) continue;
+            key = bios_status();
+	    }
+        break;
+    }
+
+    return key;
+}
+
+static char getchar() {
+    char key;
+
+    while (1) {
+        key = bios_getchar();
+
+        /* check for ctrl+c, ctrl+p or ctrl+s */
+        if (!handle_control_c(key)) break;
+    }
+
+    if (key == 'S'-'@') key = bios_getchar();
+
+    return key;
+}
+
+void kputchar(char c) {
+    if (c == '\b') {
+        linepos--;
+    } else if (c == '\t') {
+        kputchar(' ');
+        while (linepos & 7)
+            kputchar(' ');
+        return;
+    } else if (c == '\r') {
+        linepos = 0;
+    } else if ((c != '\n') && (c != '\a')) {
+        linepos++;
+    }
+
     bios_putchar(c);
     if (echo_to_printer) bios_lpt_putchar(0,c);
 }
 
+void kputs(const char *str) {
+    int i;
+    for (i = 0; str[i]; i++)
+        kputchar(str[i]);
+}
+
 /* int 21h ah=0x01 */
 void getchar_echo(void) {
-    check_control_c();
-    putchar(last_sp->al = bios_getchar());
+    kputchar(last_sp->al = getchar());
 }
 
 /* int 21h ah=0x02 */
 void putchar(void) {
-    check_control_c();
-    putchar(last_sp->dl);
+    status();
+    kputchar(last_sp->dl);
 }
 
 /* int 21h ah=0x03 */
 void aux_getchar(void) {
-    check_control_c();
+    status();
     last_sp->al = bios_com_getchar(0);
 }
 
 /* int 21h ah=0x04 */
 void aux_putchar(void) {
-    check_control_c();
+    status();
     bios_com_putchar(0, last_sp->dl);
 }
 
 /* int 21h ah=0x05 */
 void prn_putchar(void) {
-    check_control_c();
+    status();
     bios_lpt_putchar(0, last_sp->dl);
 }
 
@@ -77,15 +123,13 @@ void prn_putchar(void) {
 void direct_io(void) {
     if (last_sp->dl == 0xFF) {
         unsigned int status = bios_status();
-        if (status) {
+        if (status)
             last_sp->flags &= ~ZF;
-            last_sp->al = bios_getchar();
-        } else {
+        else
             last_sp->flags |= ZF;
-            last_sp->al = 0;
-        }
+        last_sp->al = status & 0xFF;
     } else {
-        putchar(last_sp->al);
+        bios_putchar(last_sp->al);
     }
 }
 
@@ -96,23 +140,64 @@ void direct_input(void) {
 
 /* int 21h ah=0x08 */
 void getchar_no_echo(void) {
-    check_control_c();
-    last_sp->al = bios_getchar();
+    last_sp->al = getchar();
 }
 
 /* int 21h ah=0x09 */
 void puts(void) {
     char far *str = FARPTR(last_sp->ds, last_sp->dx);
     unsigned int i;
+
     for (i=0; str[i] != '$'; i++) {
-        check_control_c();
-        putchar(str[i]);
+        status();
+        kputchar(str[i]);
     }
+}
+
+static int add_char_to_buffer (unsigned char key, unsigned char *buffer, uint8_t newlen, uint8_t *newpos) {
+    if (*newpos < newlen - 1) {
+        /* echo keys back */
+        if ((key < ' ') && (key != '\t')) {
+            kputchar('^');
+            kputchar(key+'@');
+        } else {
+            kputchar(key);
+        }
+
+        /* store the key */
+        buffer[(*newpos)++] = key;
+        return 1;
+
+    } else {
+        /* beep if buffer full */
+        kputchar('\a');
+        return 0;
+    }
+}
+
+static uint8_t skip_to_char (const unsigned char far *oldbuf, uint8_t oldlen, uint8_t oldpos) {
+    char key;
+    int count;
+
+    /* wait for character and discard extended key codes */
+    key = getchar();
+    if (!key) {
+        getchar();
+        return oldpos;
+    }
+
+    /* find character */
+    for (count = oldpos; count < oldlen; count++)
+        if (oldbuf[count] == key)
+            return count;
+
+    /* do nothing, if character can't be found */
+    return oldpos;
 }
 
 /* int 21h ah=0x0A */
 void gets(void) {
-    unsigned int i;
+    unsigned int i, count;
     /* get pointer to user input buffer containing previous input */
     unsigned char far *oldbuf = FARPTR(last_sp->ds, last_sp->dx);
     /* get length of old input and new input */
@@ -120,50 +205,160 @@ void gets(void) {
     /* abort if buffer size is zero */
     if (!newlen) return;
     /* set starting position */
+    unsigned int initpos = linepos;
     uint8_t newpos = 0, oldpos = 0;
+    int insert = 0;
     /* point original input buffer to start of page */
     oldbuf += 2;
+
     while (1) {
         /* get next key including extended key code */
-        check_control_c();
-        unsigned int key = bios_getchar();
+        unsigned int key = getchar();
         if (!key) {
-            check_control_c();
-            key |= bios_getchar() << 8;
+            key |= getchar() << 8;
         }
+
         switch (key) {
             case 'F'-'@': /* ctrl+f */
                 break;
+
             case '\b': /* backspace */
-            case '\t': /* horizontal tab */
+            case 0x4B<<8: /* left arrow */
+                /* do nothing, if no characters in buffer */
+                if (!newpos) {
+                    if (oldpos)
+                        oldpos--;
+                    break;
+                }
+
+                /* delete character */
+                newpos--;
+                if (oldpos && (buffer[newpos] == oldbuf[oldpos - 1]))
+                    oldpos--;
+
+                /* determine amount to backtrack */
+                if (linepos <= initpos) break;
+                count = 1;
+                if (buffer[newpos] == '\t') {
+                    count = 0;
+                    for (i = 1; i <= newpos; i++) {
+                        if (buffer[newpos - i] == '\t') break;
+                        count += buffer[newpos - i] < ' ' ? 2 : 1;
+                    }
+                    if (i > newpos) count += initpos;
+                    count = 8 - (count & 7);
+                } else if (buffer[newpos] < ' ') {
+                    count = 2;
+                }
+
+                /* print stuff out */
+                for (i = 0; i < count; i++)
+                    kputchar('\b');
+                for (i = 0; i < count; i++)
+                    kputchar(' ');
+                for (i = 0; i < count; i++)
+                    kputchar('\b');
+                break;
+
             case '\n': /* line feed */
+                kputchar('\r');
+                kputchar('\n');
+                initpos = linepos;
+                break;
+
             case '\r': /* carriage return */
-                buffer[newpos++] = 13;
+                buffer[newpos++] = '\r';
                 for (i = 0; i < newpos; i++)
                     oldbuf[i] = buffer[i];
                 oldbuf -= 2;
-                oldbuf[1] = newpos;
+                oldbuf[1] = newpos - 1;
+                kputchar('\r');
                 return;
+
             case '\e': /* escape */
-            case 127: /* delete */
+                kputchar('\\');
+                while (linepos != initpos)
+                    kputchar('\b');
+                kputchar('\n');
+                insert = newpos = oldpos = 0;
+                break;
+
+            case 0x52<<8: /* insert */
+                insert = !insert;
+                break;
+
+            case 0x53<<8: /* delete */
+                if (oldpos < oldlen)
+                    oldpos++;
+                break;
+
+            case 0x4D<<8: /* right arrow */
+            case 0x3B<<8: /* F1 */
+                if (oldpos >= oldlen)
+                    break;
+                add_char_to_buffer(oldbuf[oldpos++],buffer,newlen,&newpos);
+                break;
+
+            case 0x3C<<8: /* F2 */
+                count = skip_to_char(oldbuf,oldlen,oldpos);
+                /* insert keys into buffer */
+                for (i = oldpos; i < count; i++)
+                    if (!add_char_to_buffer(oldbuf[i],buffer,newlen,&newpos))
+                        break;
+                oldpos = count;
+                break;
+
+            case 0x3D<<8: /* F3 */
+                for (i = oldpos; i < oldlen; i++)
+                    if (!add_char_to_buffer(oldbuf[i],buffer,newlen,&newpos))
+                        break;
+                oldpos = oldlen;
+                break;
+
+            case 0x3E<<8: /* F4 */
+                oldpos = skip_to_char(oldbuf,oldlen,oldpos);
+                break;
+
+            case 0x3F<<8: /* F5 */
+                /* set current input as previous input */
+                for (i = 0; i < newpos; i++)
+                    oldbuf[i] = buffer[i];
+                oldlen = newpos;
+
+                /* reset input */
+                kputchar('@');
+                while (linepos != initpos)
+                    kputchar('\b');
+                kputchar('\n');
+                insert = newpos = oldpos = 0;
+                break;
+
             default:
-                if (newpos < newlen - 1) {
-                } else {
-                    putchar('\a'); /* beep */
-                }
+                /* turn F6 into ctrl+z */
+                if (key == (0x40 << 8))
+                    key = 'Z'-'@';
+                /* turn F7 into null */
+                if (key == (0x41 << 8))
+                    key = '\0';
+                /* discard unhandled extended key codes */
+                if (key >> 8)
+                    break;
+               /* store character and increment previous input position, if not insert mode and more characters there */
+               if (add_char_to_buffer(key,buffer,newlen,&newpos) && (oldpos < oldlen) && !insert)
+                   oldpos++;
         }
     }
 }
 
 /* int 21h ah=0x0B */
 void con_status(void) {
-    check_control_c();
-    last_sp->al = bios_status() ? 0xFF : 0;
+    last_sp->al = status() ? 0xFF : 0;
 }
 
 /* int 21h ah=0x0C */
 void con_flush(void) {
     bios_flush();
+
     switch (last_sp->al) {
     case 1:
         getchar_echo();
@@ -181,5 +376,6 @@ void con_flush(void) {
         gets();
         break;
     }
+
     return;
 }

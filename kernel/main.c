@@ -2,6 +2,7 @@
 #include <ptrdef.h>
 #include <bios/io.h>
 #include <bios/disk.h>
+#include <api/chario.h>
 #include <lib/klib.h>
 #include <lib/alloc.h>
 
@@ -72,9 +73,14 @@ void kmain(void) {
     kputs("\r\nkfalloc returned seg = ");
     kprn_x(SEGMENTOF(seg));
 
+    buf[0] = 254;
+    buf[1] = 0;
     for (;;) {
         kputs("\r\nLibreDOS> ");
-        kgets(buf, 256);
-        kputs(buf);
+        asm volatile ("movw %%bx, %%ds\n"
+                      "int $0x21" :: "a" (0x0C0A), "b" (0), "d" (buf) : "%ds");
+        buf[2+buf[1]] = '\0';
+        kputs("\n");
+        kputs(buf+2);
     }
 }

@@ -62,9 +62,9 @@ unsigned int bios_status(void) {
                   "popw %%bx" : "=a" (ret), "=b" (flags) : "a" (0x0100));
     /* check zero flag */
     if (flags & 0x0040)
-        return ret;
-    else
         return 0;
+    else
+        return ret;
 }
 
 void bios_flush(void) {
