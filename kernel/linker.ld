@@ -3,7 +3,9 @@ ENTRY(_start)
 
 SECTIONS
 {
-    . = 0x500;
+    io_stack = 0x0800;
+    dsk_stack = 0x0B00;
+    . = dsk_stack;
 
     .text : {
         *(.mb_header)

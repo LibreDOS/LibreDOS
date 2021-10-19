@@ -1,3 +1,5 @@
+extern io_stack
+extern dsk_stack ; TODO temporary
 extern data_end
 extern bss_end
 
@@ -5,7 +7,7 @@ extern kmain
 
 global _start
 
-%define target_address 0x500
+%define target_address 0x0B00
 %define load_address 0x200000
 
 section .text
@@ -44,15 +46,15 @@ _start:
     ; legacy boot sector entrypoint signature
     align 2
     dd 0x55AA55AA
-  .realmode:
+    ; fix code segment
+    jmp 0x0000:.realmode
 
-    xor ax, ax
+  .realmode:
+    mov ax, cs
     mov ds, ax
     mov es, ax
-;    mov fs, ax
-;    mov gs, ax
     mov ss, ax
-    mov sp, 0x8000
+    mov sp, dsk_stack ; use I/O stack for initialization - (TODO using disk stack to test character I/O)
 
     sti
 
