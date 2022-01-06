@@ -1,4 +1,5 @@
 #include<stdint.h>
+#include<stdbool.h>
 #include<ptrdef.h>
 #include<bios/io.h>
 #include<api/stack.h>
@@ -31,11 +32,11 @@ static int handle_control_c(char key) {
     return 0;
 }
 
-static unsigned int status() {
+static unsigned int status(void) {
     unsigned int key;
     char ascii;
 
-    while (1) {
+    while (true) {
         key = bios_status();
         ascii = key & 0xFF;
 
@@ -51,10 +52,10 @@ static unsigned int status() {
     return key;
 }
 
-static char getchar() {
+static char getchar(void) {
     char key;
 
-    while (1) {
+    while (true) {
         key = bios_getchar();
 
         /* check for ctrl+c, ctrl+p or ctrl+s */
@@ -154,7 +155,7 @@ void puts(void) {
     }
 }
 
-static int add_char_to_buffer (unsigned char key, unsigned char *buffer, uint8_t newlen, uint8_t *newpos) {
+static int add_char_to_buffer (unsigned char key, char *buffer, uint8_t newlen, uint8_t *newpos) {
     if (*newpos < newlen - 1) {
         /* echo keys back */
         if ((key < ' ') && (key != '\t')) {
@@ -175,7 +176,7 @@ static int add_char_to_buffer (unsigned char key, unsigned char *buffer, uint8_t
     }
 }
 
-static uint8_t skip_to_char (const unsigned char far *oldbuf, uint8_t oldlen, uint8_t oldpos) {
+static uint8_t skip_to_char (const char far *oldbuf, uint8_t oldlen, uint8_t oldpos) {
     char key;
     int count;
 
@@ -207,11 +208,11 @@ void gets(void) {
     /* set starting position */
     unsigned int initpos = linepos;
     uint8_t newpos = 0, oldpos = 0;
-    int insert = 0;
+    bool insert = false;
     /* point original input buffer to start of page */
     oldbuf += 2;
 
-    while (1) {
+    while (true) {
         /* get next key including extended key code */
         unsigned int key = getchar();
         if (!key) {
@@ -280,7 +281,8 @@ void gets(void) {
                 while (linepos != initpos)
                     kputchar('\b');
                 kputchar('\n');
-                insert = newpos = oldpos = 0;
+                insert = false;
+                newpos = oldpos = 0;
                 break;
 
             case 0x52<<8: /* insert */
@@ -330,7 +332,8 @@ void gets(void) {
                 while (linepos != initpos)
                     kputchar('\b');
                 kputchar('\n');
-                insert = newpos = oldpos = 0;
+                insert = false;
+                newpos = oldpos = 0;
                 break;
 
             default:
