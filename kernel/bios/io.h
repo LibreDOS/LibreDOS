@@ -5,7 +5,7 @@ void bios_init(void);
 
 void bios_putchar(char);
 char bios_getchar(void);
-unsigned int bios_status();
+unsigned int bios_status(void);
 void bios_flush(void);
 void bios_com_putchar(unsigned int, char);
 char bios_com_getchar(unsigned int);
