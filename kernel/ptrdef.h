@@ -1,6 +1,8 @@
 #ifndef __PTRDEF_H__
 #define __PTRDEF_H__
 
+#include <stdint.h>
+
 #define far __far
 #define SEGMENTOF(x) ((segment_t)((uintfar_t)(x) >> 16))
 #define OFFSETOF(x) ((uintptr_t)((x) & 0xFFFF))
