@@ -6,11 +6,11 @@
 #include<api/chario.h>
 
 extern void int23_dispatch(void);
-static unsigned char buffer[256];
-static int echo_to_printer = 0;
+static char buffer[256];
+static bool echo_to_printer = false;
 static unsigned int linepos = 0;
 
-static int handle_control_c(char key) {
+static bool handle_control_c(char key) {
     switch (key) {
         case 'C'-'@':
             bios_putchar('^');
@@ -22,14 +22,14 @@ static int handle_control_c(char key) {
 
         case 'P'-'@':
             echo_to_printer = !echo_to_printer;
-            return 1;
+            return true;
 
         case 'S'-'@':
             key = bios_getchar();
             if ((key == 'C'-'@') || (key == 'P'-'@')) handle_control_c(key);
     }
 
-    return 0;
+    return false;
 }
 
 static unsigned int status(void) {
@@ -200,7 +200,7 @@ static uint8_t skip_to_char (const char far *oldbuf, uint8_t oldlen, uint8_t old
 void gets(void) {
     unsigned int i, count;
     /* get pointer to user input buffer containing previous input */
-    unsigned char far *oldbuf = FARPTR(last_sp->ds, last_sp->dx);
+    char far *oldbuf = FARPTR(last_sp->ds, last_sp->dx);
     /* get length of old input and new input */
     uint8_t newlen = oldbuf[0], oldlen = oldbuf[1];
     /* abort if buffer size is zero */

@@ -1,3 +1,4 @@
+#include <stddef.h>
 #include <stdint.h>
 #include <ptrdef.h>
 #include <bios/io.h>

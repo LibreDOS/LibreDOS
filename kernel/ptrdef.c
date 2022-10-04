@@ -1,3 +1,4 @@
+#include <stdint.h>
 #include <ptrdef.h>
 
 void far ** const ivt = 0;
