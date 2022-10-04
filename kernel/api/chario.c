@@ -234,7 +234,7 @@ void gets(void) {
 
                 /* delete character */
                 newpos--;
-                if (oldpos && (buffer[newpos] == oldbuf[oldpos - 1]))
+                if (oldpos)
                     oldpos--;
 
                 /* determine amount to backtrack */
