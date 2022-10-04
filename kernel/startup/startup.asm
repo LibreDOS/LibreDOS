@@ -57,6 +57,11 @@ _start:
     mov sp, dsk_stack ; use I/O stack for initialization - (TODO using disk stack to test character I/O)
 
     sti
+    mov di, data_end ; clear BSS (which the legacy boot sector does not do)
+    mov cx, bss_end
+    sub cx, di
+    xor al, al
+    rep stosb
 
     call kmain
 
