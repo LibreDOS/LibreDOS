@@ -1,3 +1,4 @@
+#include <stdint.h>
 #include <ptrdef.h>
 #include <api/chario.h>
 #include <lib/klib.h>

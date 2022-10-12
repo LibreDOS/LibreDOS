@@ -6,8 +6,8 @@
 #include<lib/alloc.h>
 
 extern symbol bss_end;
-static unsigned int memory_base;
-static unsigned int memory_end;
+static segment_t memory_base;
+static segment_t memory_end;
 static bool inited = false;
 static char memerror[] = "\r\nMemory allocation error\r\n";
 
