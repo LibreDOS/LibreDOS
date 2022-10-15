@@ -2,7 +2,6 @@
 #include <stdint.h>
 #include <ptrdef.h>
 #include <bios/io.h>
-#include <bios/disk.h>
 #include <api/chario.h>
 #include <lib/klib.h>
 #include <lib/alloc.h>
