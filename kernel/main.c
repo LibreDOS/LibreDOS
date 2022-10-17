@@ -2,6 +2,7 @@
 #include <stdint.h>
 #include <ptrdef.h>
 #include <bios/io.h>
+#include <bios/disk.h>
 #include <api/chario.h>
 #include <lib/klib.h>
 #include <lib/alloc.h>
@@ -16,18 +17,19 @@ extern void int26(void);
 
 void kmain(void) {
     char *buf;
-    char far *seg;
+    //char far *seg;
 
     kputs("Welcome to LibreDOS!\r\n");
 
-    kputs("\r\nInitialising kernel data seg mem allocation system...");
+    //kputs("Initializing eternal heap allocation...\r\n");
     init_knalloc();
-    kputs("  DONE");
 
-    kputs("\r\nInitializing I/O ...");
+    kputs("Initializing I/O ...\r\n");
     bios_init();
+    kputs("Initializing disks ...\r\n");
+    bios_disk_init();
 
-    kputs("\r\nInitializing Interrupts");
+    //kputs("Initializing Interrupts");
     asm volatile ("cli");
     ivt[0x20] = int20;
     ivt[0x21] = int21;
@@ -40,38 +42,39 @@ void kmain(void) {
     ivt[3] = int_stub;
     ivt[4] = int_stub;
     asm volatile ("sti");
+    //kputs("  DONE\r\n");
 
-    kputs("\r\nAllocating 256 bytes...");
+    kputs("Allocating 256 bytes...");
     buf = knalloc(256);
-    kputs("  DONE");
+    kputs("  DONE\r\n");
 
-    kputs("\r\nknalloc returned ptr = ");
+    kputs("knalloc returned ptr = ");
     kprn_x((unsigned int)buf);
 
     kputs("\r\nAllocating 256 bytes...");
     buf = knalloc(256);
-    kputs("  DONE");
+    kputs("  DONE\r\n");
 
-    kputs("\r\nknalloc returned ptr = ");
+    kputs("knalloc returned ptr = ");
     kprn_x((unsigned int)buf);
 
-    kputs("\r\nInitialising mem seg allocation system...");
+    /*kputs("\r\nInitialising dynamic segment allocation...");
     init_kfalloc();
-    kputs("  DONE");
+    kputs("  DONE\r\n");
 
-    kputs("\r\nAllocating 128k bytes...");
+    kputs("Allocating 128k bytes...");
     seg = kfalloc(131072, 8);
     kputs("  DONE");
 
-    kputs("\r\nkfalloc returned seg = ");
+    kputs("kfalloc returned seg = ");
     kprn_x(SEGMENTOF(seg));
 
     kputs("\r\nAllocating 128k bytes...");
     seg = kfalloc(131072, 8);
-    kputs("  DONE");
+    kputs("  DONE\r\n");
 
-    kputs("\r\nkfalloc returned seg = ");
-    kprn_x(SEGMENTOF(seg));
+    kputs("kfalloc returned seg = ");
+    kprn_x(SEGMENTOF(seg));*/
 
     buf[0] = 254;
     buf[1] = 0;

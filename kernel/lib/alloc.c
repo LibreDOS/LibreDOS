@@ -2,6 +2,7 @@
 #include<stdint.h>
 #include<stdbool.h>
 #include<ptrdef.h>
+#include<api/chario.h>
 #include<lib/klib.h>
 #include<lib/alloc.h>
 
@@ -9,28 +10,6 @@ extern symbol bss_end;
 static segment_t memory_base;
 static segment_t memory_end;
 static bool inited = false;
-static char memerror[] = "\r\nMemory allocation error\r\n";
-
-/* DOS-style MCB */
-__attribute__((packed)) struct mcb_t {
-    char type;
-    unsigned int owner;
-    segment_t size;
-    char reserved[11];
-};
-
-#define HEAP_CHUNK_SIZE (sizeof(struct mcb_t) >> 4)
-
-void init_knalloc(void) {
-    /* get first paragraph after kernel segment */
-    memory_base = PARA((uintptr_t)bss_end);
-
-    /* get first paragraph after conventional memory */
-    asm ("int $0x12" : "=a" (memory_end));
-    memory_end <<= 6;
-
-    return;
-}
 
 /* allocates a memory chunk inside the kernel segment during initialization */
 void *knalloc(size_t size) {
@@ -49,6 +28,32 @@ void *knalloc(size_t size) {
         ptr[i] = 0;
     return (void *)ptr;
 }
+
+void init_knalloc(void) {
+    /* get first paragraph after kernel segment */
+    memory_base = PARA((uintptr_t)bss_end);
+
+    /* get first paragraph after conventional memory */
+    asm ("int $0x12" : "=a" (memory_end));
+    kprn_ul(memory_end);
+    kputs("k RAM\r\n");
+    memory_end <<= 6;
+
+    return;
+}
+
+#ifdef VERSION_2_0
+static char memerror[] = "\r\nMemory allocation error\r\n";
+
+/* DOS-style MCB */
+__attribute__((packed)) struct mcb_t {
+    char type;
+    unsigned int owner;
+    segment_t size;
+    char reserved[11];
+};
+
+#define HEAP_CHUNK_SIZE (sizeof(struct mcb_t) >> 4)
 
 /* knalloc should not be called after this */
 void init_kfalloc(void) {
@@ -200,3 +205,4 @@ void far *kfrealloc(void far *addr, farsize_t new_size) {
 
     return new_ptr;
 }
+#endif
