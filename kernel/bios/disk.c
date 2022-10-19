@@ -67,8 +67,9 @@ static bool int13_8 (int drive, struct int13_8_t *data) {
     asm("int $0x13\n"
         "pushf\n"
         "popw %%ax\n"
-        "sti" : "=a" (data->flags), "=b" (data->floppy_type),
-        "=c" (data->cylinder_sector), "=d" (data->head_drive)
+        "sti"
+        : "=a" (data->flags), "=b" (data->floppy_type),
+          "=c" (data->cylinder_sector), "=d" (data->head_drive)
         : "a" (0x0800), "d" (drive) : "%si", "%di", "%bp", "%ds", "%es", "cc");
     asm volatile ("int $0x13" :: "a" (0x0100), "d" (drive) : "cc");
     /* check if carry flag not set and cylinder/sector number not zero */
@@ -83,7 +84,8 @@ struct int13_15_t {
 static bool int13_15 (int drive, struct int13_15_t *data) {
     asm("int $0x13\n"
         "pushf\n"
-        "popw %%bx" : "=a" (data->drive_type), "=b" (data->flags)
+        "popw %%bx"
+        : "=a" (data->drive_type), "=b" (data->flags)
         : "a" (0x15FF), "d" (drive) : "%cx", "cc");
     asm volatile ("int $0x13" :: "a" (0x0100), "d" (drive) : "cc");
     /* guard against bug in AX return value */
@@ -134,8 +136,11 @@ static void scan_drives(int start, int end, int count) {
         }
         /* accept drive if function 15 returns something valid
          * if only function 8 returns something valid, take that if nothing
-         * works on function 15 (i.e. presumably not implemented) */
-        if (detected_count < count && ((!use_int13_15 && int13_8_valid) || int13_15_valid))
+         * works on function 15 (i.e. presumably not implemented)
+         * for hard drives, a valid function 8 return value is required */
+        if (detected_count < count
+            && (((!use_int13_15 || int13_15_valid) && int13_8_valid)
+                || (i < 0x80 && int13_15_valid)))
             drives[drive_count + detected_count++] = drive;
     }
 
