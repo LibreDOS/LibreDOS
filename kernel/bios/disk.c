@@ -1,7 +1,8 @@
 #include <stdbool.h>
-#include <stdint.h>
+#include <stddef.h>
 #include <ptrdef.h>
 #include <bios/disk.h>
+#include <api/exep.h>
 #include <api/chario.h>
 #include <lib/klib.h>
 
@@ -34,25 +35,26 @@ __attribute__((packed)) struct dpt_t {
 #define MAX_DISK_COUNT ('Z'-'A'+1)
 
 static struct drive_t {
-    int bios_number;
+    unsigned int bios_number;
     enum {
         none, floppy_no_detect, floppy_swap_detect, hard_drive
     } type;
     enum {
         unknown, floppy_360, floppy_1220, floppy_720, floppy_1440, floppy_2880
     } media_type;
-    int cylinder_count, head_count, sector_count;
+    unsigned int cylinder_count, head_count, sector_count;
 } drives[MAX_DISK_COUNT];
 
 static int drive_count = 0;
 static bool virtual_drive = false;
 
 static struct parition_t {
-    int drive_number;
+    bool valid;
+    unsigned int drive_number;
     uint32_t hidden_sectors;
 } partitions[MAX_DISK_COUNT];
 
-static int partition_count = 0;
+static unsigned int partition_count = 0;
 
 static const char floppy_drive_types[6][8] = {{"unknown"},{"360k"},{"1220k"},
                                               {"720k"},{"1440k"},{"2880k"}};
@@ -63,7 +65,7 @@ struct int13_8_t {
 };
 
 /* read info from function 8 */
-static bool int13_8 (int drive, struct int13_8_t *data) {
+static bool int13_8 (unsigned int drive, struct int13_8_t *data) {
     asm("int $0x13\n"
         "pushf\n"
         "popw %%ax\n"
@@ -81,7 +83,7 @@ struct int13_15_t {
 };
 
 /* read info from function 15h */
-static bool int13_15 (int drive, struct int13_15_t *data) {
+static bool int13_15 (unsigned int drive, struct int13_15_t *data) {
     asm("int $0x13\n"
         "pushf\n"
         "popw %%bx"
@@ -96,8 +98,80 @@ static bool int13_15 (int drive, struct int13_15_t *data) {
 }
 
 
-static void scan_drives(int start, int end, int count) {
-    int detected_count = 0, i;
+static char buffer[512];
+
+static unsigned int read_write_sectors(unsigned int operation, struct drive_t *drive,
+                                       unsigned int start, unsigned int count, void far *target) {
+    uintfar_t physical_address = (SEGMENTOF(target) << 4) + OFFSETOF(target);
+    unsigned int cylinder = start / (drive->head_count * drive->sector_count);
+    unsigned int sector = start % (drive->head_count * drive->sector_count);
+    unsigned int head = sector / drive->sector_count;
+    sector %= drive->sector_count;
+
+    while (count) {
+        unsigned int transfer_size = count;
+        segment_t segment;
+        uintptr_t offset;
+        unsigned int i;
+        uint16_t status, flags;
+        /* check if transfer would go over 64k boundary */
+        if (~((physical_address + (count << 9)) ^ physical_address) & 0xF0000ul)
+            transfer_size = ((physical_address & ~0xFFFFul) + 0x10000ul - physical_address) >> 8;
+        /* check if transfer would go over track boundary */
+        if (transfer_size > drive->sector_count - sector)
+            transfer_size = drive->sector_count - sector;
+
+        /* when going across a 64k boundary,
+         * or if it is on a buffer with a odd physical address and it's the last sector,
+         * use the char array as a buffer for that sector */
+        if (transfer_size && (!(physical_address & 1) || count > 1)) {
+            segment = physical_address >> 16;
+            offset = physical_address & 0xFFFF;
+        } else {
+            transfer_size = 1;
+            segment = 0;
+            offset = (uintptr_t)buffer;
+        }
+        for (i = 0; i <= 3; i++) {
+            asm volatile ("movw %%si, %%es\n"
+                          "stc\n"
+                          "int $0x13\n"
+                          "pushf\n"
+                          "popw %%bx\n"
+                          : "=a" (status),
+                            "=b" (flags)
+                          : "a" ((operation << 8) + transfer_size),
+                            "b" (offset),
+                            "c" (((cylinder & 0xFF) << 8) + (cylinder & ~0xFF >> 2) + sector + 1),
+                            "d" ((head << 8) + drive->bios_number),
+                            "S" (segment)
+                          : "%dx", "%es", "cc");
+            if (status == transfer_size)
+                break;
+        }
+        if (status != transfer_size)
+            return status >> 8;
+        if (segment == 0 && offset == buffer)
+            kfmemcpy((void far *)physical_address, FARPTR(0,buffer), 512);
+
+        count -= transfer_size;
+        physical_address += transfer_size << 9;
+        sector += transfer_size;
+        if (sector >= drive->sector_count) {
+            sector = 0;
+            head++;
+            if (head >= drive->head_count) {
+                head = 0;
+                cylinder++;
+            }
+        }
+    }
+    return 0;
+}
+
+
+static void scan_drives(unsigned int start, unsigned int end, unsigned int count) {
+    unsigned int detected_count = 0, i;
     bool use_int13_15 = false;
     struct int13_8_t int13_8_data;
     struct int13_15_t int13_15_data;
@@ -115,10 +189,12 @@ static void scan_drives(int start, int end, int count) {
         drive.bios_number = i;
         drive.type = floppy_no_detect;
         if ((int13_8_valid = int13_8(i,&int13_8_data))) {
+            /* convert floppy media type return value */
             if (int13_8_data.floppy_type == 6)
                 int13_8_data.floppy_type--;
             if (int13_8_data.floppy_type < 6)
                 drive.media_type = int13_8_data.floppy_type;
+            /* get disk geometry */
             drive.sector_count = int13_8_data.cylinder_sector & 0x3F;
             drive.head_count = (int13_8_data.head_drive >> 8) + 1;
             drive.cylinder_count = (int13_8_data.cylinder_sector >> 8)
@@ -150,7 +226,7 @@ static void scan_drives(int start, int end, int count) {
 void bios_disk_init(void) {
     /* get the amount of floppy drives */
     uint16_t equipment = 0;
-    int count = 0, i;
+    unsigned int count = 0, i;
     /* try int 11h first */
     asm ("int $0x11" : "=a" (equipment));
     if (equipment & 1)
