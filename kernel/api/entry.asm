@@ -136,7 +136,7 @@ disk_dispatch:
     sti ; interrupts can happen now
     call [temp_vector]
     call restore_frame
-    iret
+    retf
 
 create_frame:
     pop word [cs:temp_vector]
@@ -209,7 +209,7 @@ section .rodata
 
 ; function dispatch table
 dispatch_table:
-    dw abort
+    dw abort_program
     dw getchar_echo, putchar, aux_getchar, aux_putchar
     dw prn_putchar, direct_io, direct_input, getchar_no_echo
     dw puts, gets, con_status, con_flush

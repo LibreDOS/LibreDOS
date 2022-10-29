@@ -1,10 +1,10 @@
 #include <stdbool.h>
 #include <stddef.h>
 #include <ptrdef.h>
-#include <bios/disk.h>
 #include <api/exep.h>
 #include <api/chario.h>
 #include <lib/klib.h>
+#include <bios/disk.h>
 
 /* relevant fields in the BDA */
 #define HDD_COUNT ((uint8_t *)0x475)
@@ -74,52 +74,20 @@ static const char floppy_drive_types[6][8] = {{"unknown"},{"360k"},{"1220k"},
                                               {"720k"},{"1440k"},{"2880k"}};
 
 
-struct int13_8_t {
-    uint16_t flags, floppy_type, cylinder_sector, head_drive;
-};
-
-/* read info from function 8 */
-static bool int13_8 (unsigned int drive, struct int13_8_t *data) {
-    asm("int $0x13\n"
-        "pushf\n"
-        "popw %%ax\n"
-        "sti"
-        : "=a" (data->flags), "=b" (data->floppy_type),
-          "=c" (data->cylinder_sector), "=d" (data->head_drive)
-        : "a" (0x0800), "d" (drive) : "%si", "%di", "%bp", "%ds", "%es", "cc");
-    asm volatile ("int $0x13" :: "a" (0x0100), "d" (drive) : "cc");
-    /* check if carry flag not set and cylinder/sector number not zero */
-    return !(data->flags & 1) && data->cylinder_sector;
-}
-
-struct int13_15_t {
-    uint16_t flags, drive_type;
-};
-
-/* read info from function 15h */
-static bool int13_15 (unsigned int drive, struct int13_15_t *data) {
-    asm("int $0x13\n"
-        "pushf\n"
-        "popw %%bx"
-        : "=a" (data->drive_type), "=b" (data->flags)
-        : "a" (0x15FF), "d" (drive) : "%cx", "cc");
-    asm volatile ("int $0x13" :: "a" (0x0100), "d" (drive) : "cc");
-    /* guard against bug in AX return value */
-    if (data->drive_type == 3)
-        data->drive_type <<= 8;
-    data->drive_type >>= 8;
-    return !(data->flags & 1) && data->drive_type > 0 && data->drive_type < 4;
-}
-
-
-volatile union {
+static volatile union {
     unsigned char bytes[SECTOR_SIZE];
     __attribute__((packed)) struct {
         unsigned char code_area[0x1BE];
         struct mbr_entry_t partition_table[4];
         uint16_t signature;
     } mbr;
+    __attribute__((packed)) struct {
+        unsigned char preamble[0x0B];
+        struct bpb30_t bpb;
+    } vbr;
 } buffer;
+
+static int drive_streak = -1;
 
 static unsigned int read_write_sectors(unsigned int operation, struct drive_t *drive,
                                        unsigned long start, unsigned long count,
@@ -159,7 +127,7 @@ static unsigned int read_write_sectors(unsigned int operation, struct drive_t *d
                           "stc\n"
                           "int $0x13\n"
                           "pushf\n"
-                          "popw %%bx\n"
+                          "popw %%bx"
                           : "=a" (status),
                             "=b" (flags)
                           : "a" ((operation << 8) + transfer_size),
@@ -169,12 +137,14 @@ static unsigned int read_write_sectors(unsigned int operation, struct drive_t *d
                             "S" (segment)
                           : "%es", "cc", "memory");
             asm volatile ("int $0x13" :: "a" (0), "d" (drive->bios_number) : "cc");
-            if (status == transfer_size)
+            if (flags & 1)
+                status = 1;
+            if (status == transfer_size && !(flags & 1))
                 break;
         }
-        if (status != transfer_size)
+        if (status != transfer_size || (flags & 1))
             return status >> 8;
-        if (segment == 0 && offset == (uintptr_t)buffer.bytes)
+        if (segment != physical_address >> 16 || (offset != physical_address & 0xFFFF))
             kfmemcpy((void far *)physical_address, FARPTR(0,buffer.bytes), SECTOR_SIZE);
 
         count -= transfer_size;
@@ -190,6 +160,158 @@ static unsigned int read_write_sectors(unsigned int operation, struct drive_t *d
         }
     }
     return 0;
+}
+
+static error_code_t convert_error (unsigned int bios_error) {
+    static unsigned int bios_errors[] {0x02, 0x03, 0x04, 0x08, 0x09, 0x20, 0x40, 0x80};
+    static error_code_t dos_errors[] {};
+    return 0;
+}
+
+uint16_t bios_disk_read(int drive_number, uint16_t start, uint16_t count, void far *dta) {
+    return 0;
+}
+
+uint16_t bios_disk_write(int drive_number, uint16_t start, uint16_t count, void far *dta) {
+    return 0;
+}
+
+struct disk_change_t bios_disk_change(int drive_number) {
+    struct partition_t *partition;
+    struct drive_t *drive;
+    struct disk_change_t return_value;
+    if (drive_number > partition_count || drive_number < 0) {
+        return_value.successful = false;
+        return_value.result.error_code = not_ready;
+        return return_value;
+    }
+    partition = &partitions[drive_number];
+	if (partition->drive_number < 0) {
+        return_value.successful = false;
+        return_value.result.error_code = not_ready;
+        return return_value;
+    }
+    drive = &drives[partition->drive_number];
+
+    if (drive->bios_number >= 0x80) {
+        return_value.successful = true;
+        return_value.result.change_status = didnt_change;
+    } else if (drive->type == floppy_no_detect) {
+        return_value.successful = true;
+        return_value.result.change_status = dont_know;
+    } else {
+        uint16_t flags;
+        asm volatile ("int $0x13\n"
+                      "pushf\n"
+                      "popw %%ax" : "=a" (flags) : "a" (0x1600), "d" (drvie->bios_number), "S" (0));
+        asm volatile ("int $0x13" :: "a" (0), "d" (drive->bios_number) : "cc");
+        return_value.successful = true;
+        if (flags & 1) {
+            return_value.result.change_status = changed;
+            partition->valid = false;
+        } else {
+            /* check if another drive was accessed since last check */
+            if (drive_streak == partition->drive_number) {
+                return_value.result.change_status = didnt_change;
+            } else {
+                return_value.result.change_status = dont_know;
+            }
+        }
+        drive_streak = partition->drive_number;
+    }
+    return return_value;
+}
+
+uint16_t bios_disk_build_bpb(int drive_number, struct bpb_t *bpb) {
+    struct partition_t *partition;
+    struct drive_t *drive;
+    int bios_error;
+    if (drive_number > partition_count || drive_number < 0)
+        return not_ready;
+    partition = &partitions[drive_number];
+	if (partition->drive_number < 0)
+        return not_ready;
+    drive = &drives[partition->drive_number];
+    if (partition->drive_number != drive_streak)
+        drive_streak = -1;
+    if (!partition->valid)
+        head_count = sector_count = 1;
+
+    /* load boot sector */
+    if ((bios_error = read_write_sectors(2,drive,0,1,buffer.bytes)) != 0)
+        return convert_error(bios_error) + (bios_error << 8);
+    knmemcpy(bpb,buffer.vbr.bpb.bpb,sizeof(struct bpb_t));
+    sector_count = buffer.vbr.bpb.sector_count;
+    head_count = buffer.vbr.bpb.head_count;
+    /* check boot sector BPB values */
+    bool valid_bpb = bpb->bytes_per_sector == SECTOR_SIZE;
+    /* check if sectors per cluster is a power of two */
+    if (bpb->sectors_per_cluster & (bpb->sectors_per_cluster - 1))
+        valid_bpb = false;
+    else if (bpb->sectors_per_cluster == 0)
+        valid_bpb = false;
+    else if (bpb->reserved_sectors == 0)
+        valid_bpb = false;
+    else if (bpb->fat_count == 0)
+        valid_bpb = false;
+    else if (bpb->root_entries == 0)
+        valid_bpb = false;
+    else if (bpb->root_entries & 0x0F)
+        valid_bpb = false;
+    else if (bpb->sector_count <= (root_entries >> 4) + sectors_per_fat * fat_count + reserved_sectors)
+        valid_bpb = false;
+    else if (bpb->media_descriptor < 0xF0)
+        valid_bpb = false;
+    else if (sector_count == 0 || sector_count > 63)
+        valid_bpb = false;
+    else if (head_count == 0 || head_count > 256)
+        valid_bpb = false;
+
+    /* load first FAT to compare media descriptor */
+    if (valid_bpb) {
+        if (read_write_sectors(2,drive,bpb->reserved_sectors,1,buffer.bytes) != 0)
+            valid_bpb = false;
+        else if (bpb->media_descriptor != buffer.bytes[0])
+            valid_bpb = false;
+    }
+}
+
+
+struct int13_8_t {
+    uint16_t flags, floppy_type, cylinder_sector, head_drive;
+};
+
+/* read info from function 8 */
+static bool int13_8 (unsigned int drive, struct int13_8_t *data) {
+    asm("int $0x13\n"
+        "pushf\n"
+        "popw %%ax\n"
+        "sti"
+        : "=a" (data->flags), "=b" (data->floppy_type),
+          "=c" (data->cylinder_sector), "=d" (data->head_drive)
+        : "a" (0x0800), "d" (drive) : "%si", "%di", "%bp", "%ds", "%es", "cc");
+    asm volatile ("int $0x13" :: "a" (0x0100), "d" (drive) : "cc");
+    /* check if carry flag not set and cylinder/sector number not zero */
+    return !(data->flags & 1) && data->cylinder_sector;
+}
+
+struct int13_15_t {
+    uint16_t flags, drive_type;
+};
+
+/* read info from function 15h */
+static bool int13_15 (unsigned int drive, struct int13_15_t *data) {
+    asm("int $0x13\n"
+        "pushf\n"
+        "popw %%bx"
+        : "=a" (data->drive_type), "=b" (data->flags)
+        : "a" (0x15FF), "d" (drive) : "%cx", "cc");
+    asm volatile ("int $0x13" :: "a" (0x0100), "d" (drive) : "cc");
+    /* guard against bug in AX return value */
+    if (data->drive_type == 3)
+        data->drive_type <<= 8;
+    data->drive_type >>= 8;
+    return !(data->flags & 1) && data->drive_type > 0 && data->drive_type < 4;
 }
 
 
@@ -248,7 +370,7 @@ static void scan_drives(unsigned int start, unsigned int end, unsigned int count
     drive_count += detected_count;
 }
 
-void bios_disk_init(void) {
+int bios_disk_init(void) {
     /* get the amount of floppy drives */
     uint16_t equipment = 0;
     unsigned int floppy_count = 0, i;
@@ -313,32 +435,12 @@ void bios_disk_init(void) {
         for (entry = buffer.mbr.partition_table; entry < buffer.mbr.partition_table + 4; entry++) {
             if (entry->active & 0x7F)
                 continue;
-            /* convert start CHS to LBA */
-            unsigned int sector = entry->start_cylinder_sector;
-            unsigned int cylinder = (sector >> 8) + ((sector & 0xC0) << 2);
-            sector = (sector & 0x3F) - 1;
-            unsigned long start_chs = drive-> head_count * drive->sector_count * (unsigned long)cylinder;
-            start_chs += drive->sector_count * entry->start_head + sector;
-            /* convert end CHS to LBA */
-            sector = entry->end_cylinder_sector;
-            cylinder = (sector >> 8) + ((sector & 0xC0) << 2);
-            sector = (sector & 0x3F) - 1;
-            unsigned long end_chs = drive-> head_count * drive->sector_count * (unsigned long)cylinder;
-            end_chs += drive->sector_count * entry->end_head + sector;
-
-            /* if LBA fields are not zero use that, otherwise use CHS */
             if (entry->lba_start != 0 && entry->lba_size != 0) {
                 partition = &partitions[partition_count++];
                 partition->valid = true;
                 partition->drive_number = i;
                 partition->start = entry->lba_start;
                 partition->size = entry->lba_size;
-            } else if (start_chs != 0 && end_chs != 0 && end_chs > start_chs) {
-                partition = &partitions[partition_count++];
-                partition->valid = true;
-                partition->drive_number = i;
-                partition->start = start_chs;
-                partition->size = end_chs - start_chs + 1;
             }
         }
     }
@@ -387,4 +489,6 @@ void bios_disk_init(void) {
         }
         kputs("\r\n");
     }
+
+    return partition_count;
 }
