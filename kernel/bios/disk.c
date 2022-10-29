@@ -31,8 +31,21 @@ __attribute__((packed)) struct dpt_t {
     uint8_t cmos_drive_type;
 };
 
+/* MBR partition table entry */
+__attribute__((packed)) struct mbr_entry_t {
+    uint8_t active;
+    uint8_t start_head;
+    uint16_t start_cylinder_sector;
+    uint8_t partition_type;
+    uint8_t end_head;
+    uint16_t end_cylinder_sector;
+    uint32_t lba_start;
+    uint32_t lba_size;
+};
 
-#define MAX_DISK_COUNT ('Z'-'A'+1)
+
+#define MAX_DRIVE_COUNT ('Z'-'A'+1)
+#define SECTOR_SIZE 512
 
 static struct drive_t {
     unsigned int bios_number;
@@ -43,16 +56,17 @@ static struct drive_t {
         unknown, floppy_360, floppy_1220, floppy_720, floppy_1440, floppy_2880
     } media_type;
     unsigned int cylinder_count, head_count, sector_count;
-} drives[MAX_DISK_COUNT];
+} drives[MAX_DRIVE_COUNT];
 
-static int drive_count = 0;
+static unsigned int drive_count = 0;
 static bool virtual_drive = false;
 
-static struct parition_t {
+static struct partition_t {
     bool valid;
-    unsigned int drive_number;
-    uint32_t hidden_sectors;
-} partitions[MAX_DISK_COUNT];
+    int drive_number;
+    uint32_t start;
+    uint32_t size;
+} partitions[MAX_DRIVE_COUNT];
 
 static unsigned int partition_count = 0;
 
@@ -98,10 +112,18 @@ static bool int13_15 (unsigned int drive, struct int13_15_t *data) {
 }
 
 
-static char buffer[512];
+volatile union {
+    unsigned char bytes[SECTOR_SIZE];
+    __attribute__((packed)) struct {
+        unsigned char code_area[0x1BE];
+        struct mbr_entry_t partition_table[4];
+        uint16_t signature;
+    } mbr;
+} buffer;
 
 static unsigned int read_write_sectors(unsigned int operation, struct drive_t *drive,
-                                       unsigned int start, unsigned int count, void far *target) {
+                                       unsigned long start, unsigned long count,
+                                       volatile void far *target) {
     uintfar_t physical_address = (SEGMENTOF(target) << 4) + OFFSETOF(target);
     unsigned int cylinder = start / (drive->head_count * drive->sector_count);
     unsigned int sector = start % (drive->head_count * drive->sector_count);
@@ -115,8 +137,8 @@ static unsigned int read_write_sectors(unsigned int operation, struct drive_t *d
         unsigned int i;
         uint16_t status, flags;
         /* check if transfer would go over 64k boundary */
-        if (~((physical_address + (count << 9)) ^ physical_address) & 0xF0000ul)
-            transfer_size = ((physical_address & ~0xFFFFul) + 0x10000ul - physical_address) >> 8;
+        if (((physical_address + (count << 9)) ^ physical_address) & ~0xFFFFul)
+            transfer_size = ((physical_address & ~0xFFFFul) + 0x10000ul - physical_address) >> 9;
         /* check if transfer would go over track boundary */
         if (transfer_size > drive->sector_count - sector)
             transfer_size = drive->sector_count - sector;
@@ -130,7 +152,7 @@ static unsigned int read_write_sectors(unsigned int operation, struct drive_t *d
         } else {
             transfer_size = 1;
             segment = 0;
-            offset = (uintptr_t)buffer;
+            offset = (uintptr_t)buffer.bytes;
         }
         for (i = 0; i <= 3; i++) {
             asm volatile ("movw %%si, %%es\n"
@@ -145,14 +167,15 @@ static unsigned int read_write_sectors(unsigned int operation, struct drive_t *d
                             "c" (((cylinder & 0xFF) << 8) + (cylinder & ~0xFF >> 2) + sector + 1),
                             "d" ((head << 8) + drive->bios_number),
                             "S" (segment)
-                          : "%dx", "%es", "cc");
+                          : "%es", "cc", "memory");
+            asm volatile ("int $0x13" :: "a" (0), "d" (drive->bios_number) : "cc");
             if (status == transfer_size)
                 break;
         }
         if (status != transfer_size)
             return status >> 8;
-        if (segment == 0 && offset == buffer)
-            kfmemcpy((void far *)physical_address, FARPTR(0,buffer), 512);
+        if (segment == 0 && offset == (uintptr_t)buffer.bytes)
+            kfmemcpy((void far *)physical_address, FARPTR(0,buffer.bytes), SECTOR_SIZE);
 
         count -= transfer_size;
         physical_address += transfer_size << 9;
@@ -181,6 +204,8 @@ static void scan_drives(unsigned int start, unsigned int end, unsigned int count
         if (int13_8(i,&int13_8_data))
             count = int13_8_data.head_drive & 0xFF;
     }
+    if (drive_count + count > MAX_DRIVE_COUNT)
+        count = MAX_DRIVE_COUNT - drive_count;
 
     /* scan drive numbers for drives */
     for (i = start; i < end && (detected_count < count || !use_int13_15); i++) {
@@ -226,26 +251,24 @@ static void scan_drives(unsigned int start, unsigned int end, unsigned int count
 void bios_disk_init(void) {
     /* get the amount of floppy drives */
     uint16_t equipment = 0;
-    unsigned int count = 0, i;
+    unsigned int floppy_count = 0, i;
+    struct drive_t *drive;
+    struct partition_t *partition;
+
     /* try int 11h first */
     asm ("int $0x11" : "=a" (equipment));
     if (equipment & 1)
-        count = ((equipment >> 6) & 3) + 1;
+        floppy_count = ((equipment >> 6) & 3) + 1;
     /* scan for floppy drives */
-    scan_drives(0,0x80,count);
+    scan_drives(0,0x80,floppy_count);
     /* if nothing found, assume those functions weren't implemented yet */
     if (drive_count == 0) {
-        for (i = 0; i < count; i++) {
+        for (i = 0; i < floppy_count; i++) {
             drives[i].bios_number = i;
             drives[i].type = floppy_no_detect;
         }
-        drive_count = count;
+        drive_count = floppy_count;
     }
-
-    /* detect hard drives */
-    count = *HDD_COUNT;
-    if (count != 0)
-        scan_drives(0x80,0x100,count);
 
     /* initialize floppy partitions */
     partition_count = drive_count;
@@ -270,26 +293,97 @@ void bios_disk_init(void) {
     DOS_DPT->sectors_per_track = 36;
     ivt[0x1E] = DOS_DPT;
 
-    for (i = 0; i < drive_count; i++) {
+    /* detect hard drives */
+    if (*HDD_COUNT != 0)
+        scan_drives(0x80,0x100,*HDD_COUNT);
+
+    /* initialize hard drive partitions */
+    for (i = floppy_count; i < drive_count && partition_count < MAX_DRIVE_COUNT; i++) {
+        volatile struct mbr_entry_t *entry;
+        drive = &drives[i];
+        /* skip drive, if we got questionable geometry */
+        if (drive->cylinder_count == 0 || drive->head_count == 0 || drive->sector_count == 0)
+            continue;
+        /* read in MBR and see what it has to offer */
+        if (read_write_sectors(2,drive,0,1,buffer.bytes))
+            continue;
+        if (buffer.mbr.signature != 0xAA55)
+            continue;
+
+        for (entry = buffer.mbr.partition_table; entry < buffer.mbr.partition_table + 4; entry++) {
+            if (entry->active & 0x7F)
+                continue;
+            /* convert start CHS to LBA */
+            unsigned int sector = entry->start_cylinder_sector;
+            unsigned int cylinder = (sector >> 8) + ((sector & 0xC0) << 2);
+            sector = (sector & 0x3F) - 1;
+            unsigned long start_chs = drive-> head_count * drive->sector_count * (unsigned long)cylinder;
+            start_chs += drive->sector_count * entry->start_head + sector;
+            /* convert end CHS to LBA */
+            sector = entry->end_cylinder_sector;
+            cylinder = (sector >> 8) + ((sector & 0xC0) << 2);
+            sector = (sector & 0x3F) - 1;
+            unsigned long end_chs = drive-> head_count * drive->sector_count * (unsigned long)cylinder;
+            end_chs += drive->sector_count * entry->end_head + sector;
+
+            /* if LBA fields are not zero use that, otherwise use CHS */
+            if (entry->lba_start != 0 && entry->lba_size != 0) {
+                partition = &partitions[partition_count++];
+                partition->valid = true;
+                partition->drive_number = i;
+                partition->start = entry->lba_start;
+                partition->size = entry->lba_size;
+            } else if (start_chs != 0 && end_chs != 0 && end_chs > start_chs) {
+                partition = &partitions[partition_count++];
+                partition->valid = true;
+                partition->drive_number = i;
+                partition->start = start_chs;
+                partition->size = end_chs - start_chs + 1;
+            }
+        }
+    }
+
+    /* print out results */
+    for (drive = drives; drive < drives + drive_count; drive++) {
         kputs("Detected ");
-        if (drives[i].bios_number < 0x80)
+        if (drive->bios_number < 0x80)
             kputs("floppy ");
         else
             kputs("hard ");
         kputs("drive ");
-        kprn_ul(drives[i].bios_number);
+        kprn_ul(drive->bios_number);
         kputs(": ");
-        if (drives[i].bios_number < 0x80) {
-            kputs(floppy_drive_types[drives[i].media_type]);
-            if (drives[i].type != floppy_no_detect)
+        if (drive->bios_number < 0x80) {
+            kputs(floppy_drive_types[drive->media_type]);
+            if (drive->type != floppy_no_detect)
                 kputs(", change detection");
         } else {
-            kprn_ul(drives[i].cylinder_count);
+            kprn_ul(drive->cylinder_count);
             kputs(" cylinders, ");
-            kprn_ul(drives[i].head_count);
+            kprn_ul(drive->head_count);
             kputs(" heads, ");
-            kprn_ul(drives[i].sector_count);
+            kprn_ul(drive->sector_count);
             kputs(" sectors");
+        }
+        kputs("\r\n");
+    }
+
+    for (i = 0; i < partition_count; i++) {
+        partition = &partitions[i];
+        kputs("Assigned ");
+        kputs("drive letter ");
+        kputchar('A' + i);
+        if (partition->drive_number >= 0) {
+            kputs(": to drive ");
+            kprn_ul(drives[partition->drive_number].bios_number);
+        } else
+            kputs(": to nothing");
+        if (partition->valid) {
+            kputs(" (start: ");
+            kprn_ul(partition->start);
+            kputs(", length: ");
+            kprn_ul(partition->size);
+            kputchar(')');
         }
         kputs("\r\n");
     }
