@@ -1,9 +1,11 @@
 #include <stddef.h>
+#include <stdbool.h>
 #include <stdint.h>
 #include <ptrdef.h>
 #include <bios/io.h>
 #include <bios/disk.h>
 #include <api/chario.h>
+#include <api/stack.h>
 #include <lib/klib.h>
 #include <lib/alloc.h>
 
@@ -18,6 +20,10 @@ extern void int26(void);
 void kmain(void) {
     char *buf;
     //char far *seg;
+    struct stack_frame_t stack_frame;
+    static const char *hex_to_ascii_tab = "0123456789abcdef";
+    struct bpb_t bpb;
+    last_sp = &stack_frame;
 
     kputs("Welcome to LibreDOS!\r\n");
 
@@ -79,11 +85,103 @@ void kmain(void) {
     buf[0] = 254;
     buf[1] = 0;
     for (;;) {
+        extern void gets(void);
+        unsigned int i = 3;
+        uint8_t far *location;
+        uint16_t segment, offset, drive, start, count;
+        union disk_change_t error;
+
         kputs("\r\nLibreDOS> ");
-        asm volatile ("movw %%bx, %%ds\n"
-                      "int $0x21" :: "a" (0x0C0A), "b" (0), "d" (buf) : "%ds");
+        stack_frame.ax = 0x0C0A;
+        stack_frame.dx = (uint16_t)buf;
+        stack_frame.ds = 0;
+        gets();
         buf[2+buf[1]] = '\0';
-        kputs("\n");
-        kputs(buf+2);
+        kputchar('\n');
+        switch (buf[2]) {
+            case 'd':
+                segment = kread_hex(buf,&i);
+                offset = kread_hex(buf,&i);
+                count = kread_hex(buf,&i);
+                location = FARPTR(segment,offset);
+                for (i = 0; i < count; i++) {
+                    kputchar(hex_to_ascii_tab[location[i] >> 4]);
+                    kputchar(hex_to_ascii_tab[location[i] & 0x0F]);
+                    if ((i & 0xF) == 0xF)
+                        kputs("\r\n");
+                    else
+                        kputchar(' ');
+                }
+                break;
+            case 'r':
+                drive = kread_hex(buf,&i);
+                start = kread_hex(buf,&i);
+                count = kread_hex(buf,&i);
+                segment = kread_hex(buf,&i);
+                offset = kread_hex(buf,&i);
+                if (bios_disk_read(drive,&error.error_code,start,count,FARPTR(segment,offset)))
+                    kputs("success!");
+                else {
+                    kputs("error: ");
+                    kprn_x(error.error_code);
+                }
+                break;
+            case 'w':
+                drive = kread_hex(buf,&i);
+                start = kread_hex(buf,&i);
+                count = kread_hex(buf,&i);
+                segment = kread_hex(buf,&i);
+                offset = kread_hex(buf,&i);
+                if (bios_disk_write(drive,&error.error_code,start,count,FARPTR(segment,offset)))
+                    kputs("success!");
+                else {
+                    kputs("error: ");
+                    kprn_x(error.error_code);
+                }
+                break;
+            case 'b':
+                drive = kread_hex(buf,&i);
+                if (bios_disk_build_bpb(drive,&error.error_code,&bpb)) {
+                    kputs("bytes per sector: ");
+                    kprn_ul(bpb.bytes_per_sector);
+                    kputs("\r\nsectors per cluster: ");
+                    kprn_ul(bpb.sectors_per_cluster);
+                    kputs("\r\nreserved sectors: ");
+                    kprn_ul(bpb.reserved_sectors);
+                    kputs("\r\nFAT count: ");
+                    kprn_ul(bpb.fat_count);
+                    kputs("\r\nroot entries: ");
+                    kprn_ul(bpb.root_entries);
+                    kputs("\r\nsector count: ");
+                    kprn_ul(bpb.sector_count);
+                    kputs("\r\nmedia descriptor: ");
+                    kprn_x(bpb.media_descriptor);
+                    kputs("\r\nsectors per FAT: ");
+                    kprn_ul(bpb.sectors_per_fat);
+                } else {
+                    kputs("error: ");
+                    kprn_x(error.error_code);
+                }
+                break;
+            case 'c':
+                drive = kread_hex(buf,&i);
+                if (bios_disk_change(drive,&error)) {
+                    switch (error.change_status) {
+                    case didnt_change:
+                        kputs("didn't change");
+                        break;
+                    case dont_know:
+                        kputs("don't know");
+                        break;
+                    case changed:
+                        kputs("changed");
+                        break;
+                    }
+                } else {
+                    kputs("error: ");
+                    kprn_x(error.error_code);
+                }
+                break;
+        }
     }
 }

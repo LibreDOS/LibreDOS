@@ -2,7 +2,7 @@ CC = ia16-elf-gcc
 LD = ia16-elf-gcc
 ASM = nasm
 
-CFLAGS ?= -pipe -O2 -Wall -Wextra
+CFLAGS ?= -pipe -O2 -Wall -Wextra -fpack-struct
 LDFLAGS ?=
 
 C_FILES = $(shell find . -type f -name '*.c')

@@ -45,7 +45,7 @@ static unsigned int status(void) {
             bios_getchar(); /* remove them from buffer */
             if (handle_control_c(ascii)) continue;
             key = bios_status();
-	    }
+        }
         break;
     }
 

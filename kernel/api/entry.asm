@@ -5,7 +5,7 @@ extern divide_error
 extern disk_read
 extern disk_write
 
-extern abort
+extern abort_program
 extern getchar_echo
 extern getchar_echo
 extern putchar
@@ -135,7 +135,9 @@ disk_dispatch:
     mov sp, dsk_stack
     sti ; interrupts can happen now
     call [temp_vector]
+    cmp ax, 1 ; set carry flag according to result
     call restore_frame
+    sti ; don't return with iret, leave the flags on the stack
     retf
 
 create_frame:

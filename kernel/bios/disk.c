@@ -4,6 +4,7 @@
 #include <api/exep.h>
 #include <api/chario.h>
 #include <lib/klib.h>
+#include <bios/io.h>
 #include <bios/disk.h>
 
 /* relevant fields in the BDA */
@@ -58,7 +59,7 @@ static struct drive_t {
     unsigned int cylinder_count, head_count, sector_count;
 } drives[MAX_DRIVE_COUNT];
 
-static unsigned int drive_count = 0;
+static int drive_count = 0;
 static bool virtual_drive = false;
 
 static struct partition_t {
@@ -68,7 +69,7 @@ static struct partition_t {
     uint32_t size;
 } partitions[MAX_DRIVE_COUNT];
 
-static unsigned int partition_count = 0;
+static int partition_count = 0;
 
 static const char floppy_drive_types[6][8] = {{"unknown"},{"360k"},{"1220k"},
                                               {"720k"},{"1440k"},{"2880k"}};
@@ -76,12 +77,12 @@ static const char floppy_drive_types[6][8] = {{"unknown"},{"360k"},{"1220k"},
 
 static volatile union {
     unsigned char bytes[SECTOR_SIZE];
-    __attribute__((packed)) struct {
+    struct __attribute__((packed)) {
         unsigned char code_area[0x1BE];
         struct mbr_entry_t partition_table[4];
         uint16_t signature;
     } mbr;
-    __attribute__((packed)) struct {
+    struct __attribute__((packed)) {
         unsigned char preamble[0x0B];
         struct bpb30_t bpb;
     } vbr;
@@ -92,11 +93,22 @@ static int drive_streak = -1;
 static unsigned int read_write_sectors(unsigned int operation, struct drive_t *drive,
                                        unsigned long start, unsigned long count,
                                        volatile void far *target) {
-    uintfar_t physical_address = (SEGMENTOF(target) << 4) + OFFSETOF(target);
+    uintfar_t physical_address = ((uintfar_t)SEGMENTOF(target) << 4) + OFFSETOF(target);
     unsigned int cylinder = start / (drive->head_count * drive->sector_count);
     unsigned int sector = start % (drive->head_count * drive->sector_count);
     unsigned int head = sector / drive->sector_count;
     sector %= drive->sector_count;
+
+    if (virtual_drive && drive->bios_number == drives[0].bios_number) {
+        if (*DISK_FLAG != drive - drives) {
+            kputs("\r\nInsert disk for drive ");
+            kputchar('A' + (drive - drives));
+            kputs(": and press any key when ready\r\n");
+            bios_flush();
+            bios_getchar();
+            *DISK_FLAG = drive - drives;
+        }
+    }
 
     while (count) {
         unsigned int transfer_size = count;
@@ -115,8 +127,8 @@ static unsigned int read_write_sectors(unsigned int operation, struct drive_t *d
          * or if it is on a buffer with a odd physical address and it's the last sector,
          * use the char array as a buffer for that sector */
         if (transfer_size && (!(physical_address & 1) || count > 1)) {
-            segment = physical_address >> 16;
-            offset = physical_address & 0xFFFF;
+            segment = physical_address >> 4;
+            offset = physical_address & 0xF;
         } else {
             transfer_size = 1;
             segment = 0;
@@ -137,14 +149,14 @@ static unsigned int read_write_sectors(unsigned int operation, struct drive_t *d
                             "S" (segment)
                           : "%es", "cc", "memory");
             asm volatile ("int $0x13" :: "a" (0), "d" (drive->bios_number) : "cc");
-            if (flags & 1)
-                status = 1;
-            if (status == transfer_size && !(flags & 1))
+            if (status >> 8 == 0 && (flags & 1))
+                status = 0x0100;
+            else if (!(flags & 1))
                 break;
         }
-        if (status != transfer_size || (flags & 1))
+        if (flags & 1)
             return status >> 8;
-        if (segment != physical_address >> 16 || (offset != physical_address & 0xFFFF))
+        if (((uintfar_t)segment << 4) + offset != physical_address)
             kfmemcpy((void far *)physical_address, FARPTR(0,buffer.bytes), SECTOR_SIZE);
 
         count -= transfer_size;
@@ -162,92 +174,132 @@ static unsigned int read_write_sectors(unsigned int operation, struct drive_t *d
     return 0;
 }
 
-static error_code_t convert_error (unsigned int bios_error) {
-    static unsigned int bios_errors[] {0x02, 0x03, 0x04, 0x08, 0x09, 0x20, 0x40, 0x80};
-    static error_code_t dos_errors[] {};
-    return 0;
+static bool convert_error (unsigned int bios_error, uint16_t *error_code, struct partition_t *partition) {
+    /* conversion table to convert int 13h error codes to ones that can be returned to DOS */
+    static const uint16_t extra_errors[] = {0x05, 0x06, 0x07, 0x0A, 0x0B, 0x0C, 0x0D, 0x0E,
+                                            0x0F, 0x11, 0x32, 0xAA, 0xBB, 0xCC, 0xE0, 0xFF};
+    static const uint16_t equiv_errors[] = {0x20, 0x80, 0x20, 0x04, 0x04, 0x04, 0x04, 0x02,
+                                            0x08, 0x10, 0x80, 0x80, 0x04, 0x00, 0x20, 0x40};
+    /* conversion table to convert int 13h error code that is returned in AH to DOS error code */
+    static const uint16_t ah_errors[] = {0x00, 0x02, 0x03, 0x04, 0x08, 0x10, 0x20, 0x40, 0x80};
+    static const enum error_code_t al_errors[] = {write_fault, general_error, write_protect, sector_not_found, data_error,
+                                                  data_error, general_error, seek_error, not_ready};
+    unsigned int i;
+    if (bios_error == 0) {
+        return true;
+    } else {
+        /* if disk change was involved, invalidate */
+        if (bios_error == 6 && drives[partition->drive_number].bios_number < 0x80)
+            partition->valid = false;
+        /* convert int 13h error code */
+        for (i = 0; i < sizeof(extra_errors)/sizeof(extra_errors[0]); i++)
+            if (bios_error == extra_errors[i]) {
+                bios_error = equiv_errors[i];
+                break;
+            }
+        /* remaining error codes shouldn't happen */
+        *error_code = (bios_error << 8) + general_error;
+        /* find corresponding DOS error */
+        for (i = 0; i < sizeof(ah_errors)/sizeof(ah_errors[0]); i++)
+            if (ah_errors[i] >> 8 == bios_error)
+                *error_code = (bios_error << 8) + al_errors[i];
+        return false;
+    }
 }
 
-uint16_t bios_disk_read(int drive_number, uint16_t start, uint16_t count, void far *dta) {
-    return 0;
+static bool check_drive_number(int drive_number, uint16_t *error_code, struct partition_t **partition, struct drive_t **drive) {
+    if (drive_number >= partition_count || drive_number < 0)
+        return convert_error(0x80,error_code,*partition);
+    *partition = &partitions[drive_number];
+    if ((*partition)->drive_number < 0)
+        return convert_error(0x80,error_code,*partition);
+    *drive = &drives[(*partition)->drive_number];
+    return true;
 }
 
-uint16_t bios_disk_write(int drive_number, uint16_t start, uint16_t count, void far *dta) {
-    return 0;
-}
-
-struct disk_change_t bios_disk_change(int drive_number) {
+bool bios_disk_read(int drive_number, uint16_t *error_code, uint16_t start, uint16_t count, void far *dta) {
     struct partition_t *partition;
     struct drive_t *drive;
-    struct disk_change_t return_value;
-    if (drive_number > partition_count || drive_number < 0) {
-        return_value.successful = false;
-        return_value.result.error_code = not_ready;
-        return return_value;
-    }
-    partition = &partitions[drive_number];
-	if (partition->drive_number < 0) {
-        return_value.successful = false;
-        return_value.result.error_code = not_ready;
-        return return_value;
-    }
-    drive = &drives[partition->drive_number];
+    if (!check_drive_number(drive_number,error_code,&partition,&drive))
+        return false;
+    if (partition->drive_number != drive_streak)
+        drive_streak = -1;
+    if (!partition->valid)
+        return convert_error(0x80,error_code,partition);
+    return convert_error(read_write_sectors(2,drive,partition->start + start,count,dta),error_code,partition);
+}
 
-    if (drive->bios_number >= 0x80) {
-        return_value.successful = true;
-        return_value.result.change_status = didnt_change;
-    } else if (drive->type == floppy_no_detect) {
-        return_value.successful = true;
-        return_value.result.change_status = dont_know;
+bool bios_disk_write(int drive_number, uint16_t *error_code, uint16_t start, uint16_t count, void far *dta) {
+    struct partition_t *partition;
+    struct drive_t *drive;
+    if (!check_drive_number(drive_number,error_code,&partition,&drive))
+        return false;
+    if (partition->drive_number != drive_streak)
+        drive_streak = -1;
+    if (!partition->valid)
+        return convert_error(0x80,error_code,partition);
+    return convert_error(read_write_sectors(3,drive,partition->start + start,count,dta),error_code,partition);
+}
+
+bool bios_disk_change(int drive_number, union disk_change_t *result) {
+    struct partition_t *partition;
+    struct drive_t *drive;
+    if (!check_drive_number(drive_number,&result->error_code,&partition,&drive))
+        return false;
+
+    if (!partition->valid)
+        result->change_status = changed;
+    else if (drive->bios_number >= 0x80 || drive->type == hard_drive)
+        result->change_status = didnt_change;
+    else if (drive->type == floppy_no_detect || (virtual_drive && drive->bios_number == drives[0].bios_number)) {
+        result->change_status = dont_know;
     } else {
         uint16_t flags;
         asm volatile ("int $0x13\n"
                       "pushf\n"
-                      "popw %%ax" : "=a" (flags) : "a" (0x1600), "d" (drvie->bios_number), "S" (0));
-        asm volatile ("int $0x13" :: "a" (0), "d" (drive->bios_number) : "cc");
-        return_value.successful = true;
+                      "popw %%ax" : "=a" (flags) : "a" (0x1600), "d" (drive->bios_number), "S" (0));
         if (flags & 1) {
-            return_value.result.change_status = changed;
+            asm volatile ("int $0x13" :: "a" (0), "d" (drive->bios_number) : "cc");
+            result->change_status = changed;
             partition->valid = false;
         } else {
             /* check if another drive was accessed since last check */
             if (drive_streak == partition->drive_number) {
-                return_value.result.change_status = didnt_change;
+                result->change_status = didnt_change;
             } else {
-                return_value.result.change_status = dont_know;
+                result->change_status = dont_know;
             }
         }
         drive_streak = partition->drive_number;
     }
-    return return_value;
+    return true;
 }
 
-uint16_t bios_disk_build_bpb(int drive_number, struct bpb_t *bpb) {
+bool bios_disk_build_bpb(int drive_number, uint16_t *error_code, struct bpb_t *bpb) {
     struct partition_t *partition;
     struct drive_t *drive;
-    int bios_error;
-    if (drive_number > partition_count || drive_number < 0)
-        return not_ready;
-    partition = &partitions[drive_number];
-	if (partition->drive_number < 0)
-        return not_ready;
-    drive = &drives[partition->drive_number];
+    bool valid_bpb = true, valid_bpb30 = true;
+    if (!check_drive_number(drive_number,error_code,&partition,&drive))
+        return false;
     if (partition->drive_number != drive_streak)
         drive_streak = -1;
     if (!partition->valid)
-        head_count = sector_count = 1;
+        drive->head_count = drive->sector_count = 2;
 
     /* load boot sector */
-    if ((bios_error = read_write_sectors(2,drive,0,1,buffer.bytes)) != 0)
-        return convert_error(bios_error) + (bios_error << 8);
-    knmemcpy(bpb,buffer.vbr.bpb.bpb,sizeof(struct bpb_t));
-    sector_count = buffer.vbr.bpb.sector_count;
-    head_count = buffer.vbr.bpb.head_count;
+    if (!convert_error(read_write_sectors(2,drive,partition->start,1,buffer.bytes),error_code,partition))
+        return false;
+    knmemcpy(bpb,(void *)&buffer.vbr.bpb.bpb,sizeof(struct bpb_t));
+    if (!partition->valid) {
+        drive->sector_count = buffer.vbr.bpb.sector_count;
+        drive->head_count = buffer.vbr.bpb.head_count;
+    } else if (drive->bios_number < 0x80)
+        partition->valid = false;
     /* check boot sector BPB values */
-    bool valid_bpb = bpb->bytes_per_sector == SECTOR_SIZE;
-    /* check if sectors per cluster is a power of two */
-    if (bpb->sectors_per_cluster & (bpb->sectors_per_cluster - 1))
+    if (bpb->bytes_per_sector != SECTOR_SIZE)
         valid_bpb = false;
+    else if (bpb->sectors_per_cluster & (bpb->sectors_per_cluster - 1))
+        valid_bpb = false; /* check if sectors per cluster is a power of two */
     else if (bpb->sectors_per_cluster == 0)
         valid_bpb = false;
     else if (bpb->reserved_sectors == 0)
@@ -258,22 +310,52 @@ uint16_t bios_disk_build_bpb(int drive_number, struct bpb_t *bpb) {
         valid_bpb = false;
     else if (bpb->root_entries & 0x0F)
         valid_bpb = false;
-    else if (bpb->sector_count <= (root_entries >> 4) + sectors_per_fat * fat_count + reserved_sectors)
+    else if (bpb->sector_count <= (bpb->root_entries >> 4) + bpb->sectors_per_fat * bpb->fat_count + bpb->reserved_sectors)
         valid_bpb = false;
     else if (bpb->media_descriptor < 0xF0)
         valid_bpb = false;
-    else if (sector_count == 0 || sector_count > 63)
-        valid_bpb = false;
-    else if (head_count == 0 || head_count > 256)
-        valid_bpb = false;
+    /* check for DOS 3.0 BPB */
+    if (drive->sector_count == 0 || drive->sector_count > 63) {
+        valid_bpb30 = false;
+        drive->head_count = drive->sector_count = 2;
+    } else if (drive->head_count == 0 || drive->head_count > 256) {
+        valid_bpb30 = false;
+        drive->head_count = drive->sector_count = 2;
+    }
 
     /* load first FAT to compare media descriptor */
     if (valid_bpb) {
-        if (read_write_sectors(2,drive,bpb->reserved_sectors,1,buffer.bytes) != 0)
+        if (read_write_sectors(2,drive,partition->start + bpb->reserved_sectors,1,buffer.bytes) != 0)
             valid_bpb = false;
         else if (bpb->media_descriptor != buffer.bytes[0])
             valid_bpb = false;
     }
+    /* require hard drives to have a valid DOS 2.0 BPB and have media descriptor F8 */
+    if (drive->bios_number >= 0x80 && (!valid_bpb || bpb->media_descriptor != 0xF8))
+        return convert_error(0x80,error_code,partition);
+    else if (!valid_bpb) {
+        if (!convert_error(read_write_sectors(2,drive,partition->start + 1,1,buffer.bytes),error_code,partition))
+            return false;
+        /* absence of BPB realistically implies double density 8 sector 5.25" floppy disks */
+        if ((bpb->media_descriptor = buffer.bytes[0]) < 0xFE)
+            return convert_error(0x80,error_code,partition);
+    }
+
+    /* check if it is a double density 5.25" floppy disk with possibly no BPB */
+    if (bpb->media_descriptor >= 0xFC) {
+        drive->sector_count = 9 - (bpb->media_descriptor >> 1 & 1);
+        drive->head_count = 1 + (bpb->media_descriptor & 1);
+        bpb->bytes_per_sector = SECTOR_SIZE;
+        bpb->sectors_per_cluster = 1 + (bpb->media_descriptor & 1);
+        bpb->reserved_sectors = 1;
+        bpb->fat_count = 2;
+        bpb->root_entries = 64 + 48 * (bpb->media_descriptor & 1);
+        bpb->sector_count = drive->sector_count * drive->head_count * 40;
+        bpb->sectors_per_fat = 2 - (bpb->media_descriptor >> 1 & 1);
+    } else if (drive->bios_number < 0x80 && (!valid_bpb30 || !valid_bpb))
+        return convert_error(0x80,error_code,partition);
+    partition->valid = true;
+    return true;
 }
 
 
@@ -373,7 +455,7 @@ static void scan_drives(unsigned int start, unsigned int end, unsigned int count
 int bios_disk_init(void) {
     /* get the amount of floppy drives */
     uint16_t equipment = 0;
-    unsigned int floppy_count = 0, i;
+    int floppy_count = 0, i;
     struct drive_t *drive;
     struct partition_t *partition;
 
@@ -388,8 +470,17 @@ int bios_disk_init(void) {
         for (i = 0; i < floppy_count; i++) {
             drives[i].bios_number = i;
             drives[i].type = floppy_no_detect;
+            drives[i].media_type = unknown;
         }
         drive_count = floppy_count;
+    }
+    /* if only one floppy drive present, emulate the second one */
+    if (drive_count == 1) {
+        drive_count = 2;
+        drives[1].bios_number = drives[0].bios_number;
+        drives[1].type = drives[0].type;
+        drives[1].media_type = drives[0].media_type;
+        virtual_drive = true;
     }
 
     /* initialize floppy partitions */
@@ -397,15 +488,10 @@ int bios_disk_init(void) {
     for (i = 0; i < drive_count; i++)
         partitions[i].drive_number = i;
     /* reserve drive letters A: and B: */
-    if (partition_count == 0) {
+    if (partition_count < 2) {
         partition_count = 2;
         partitions[0].drive_number = -1;
         partitions[1].drive_number = -1;
-    } else if (partition_count == 1) {
-        partition_count = 2;
-        /* if only one floppy drive present, emulate the second one */
-        partitions[1].drive_number = 0;
-        virtual_drive = true;
     }
     /* reset flag for virtual floppy drive */
     *DISK_FLAG = 0;

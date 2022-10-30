@@ -18,11 +18,17 @@ void divide_error(void) {
 }
 
 /* int 25h */
-void disk_read(void) {
-    last_sp->ax = bios_disk_read(last_sp->al, last_sp->dx, last_sp->cx, FARPTR(last_sp->ds,last_sp->bx));
+bool disk_read(void) {
+    uint16_t error_code;
+    bool success = bios_disk_read(last_sp->al, &error_code, last_sp->dx, last_sp->cx, FARPTR(last_sp->ds,last_sp->bx));
+    last_sp->ax = error_code;
+    return success;
 }
 
 /* int 26h */
-void disk_write(void) {
-    last_sp->ax = bios_disk_write(last_sp->al, last_sp->dx, last_sp->cx, FARPTR(last_sp->ds,last_sp->bx));
+bool disk_write(void) {
+    uint16_t error_code;
+    bool success = bios_disk_write(last_sp->al, &error_code, last_sp->dx, last_sp->cx, FARPTR(last_sp->ds,last_sp->bx));
+    last_sp->ax = error_code;
+    return success;
 }

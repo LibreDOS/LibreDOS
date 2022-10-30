@@ -54,7 +54,7 @@ _start:
     mov ds, ax
     mov es, ax
     mov ss, ax
-    mov sp, dsk_stack ; use I/O stack for initialization - (TODO using disk stack to test character I/O)
+    mov sp, io_stack ; use I/O stack for initialization
 
     sti
     mov di, data_end ; clear BSS (which the legacy boot sector does not do)

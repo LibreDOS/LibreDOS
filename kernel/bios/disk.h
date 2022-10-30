@@ -1,14 +1,11 @@
 #ifndef __BIOS_DISK_H__
 #define __BIOS_DISK_H__
 
-struct disk_change_t {
-    bool successful;
-    union {
-        enum {
-            dont_know, didnt_change, changed = -1
-        } change_status;
-        enum error_code_t error_code;
-    } result;
+union disk_change_t {
+    enum {
+        dont_know, didnt_change, changed = -1
+    } change_status;
+    uint16_t error_code;
 };
 
 __attribute__((packed)) struct bpb_t {
@@ -26,12 +23,12 @@ __attribute__((packed)) struct bpb30_t {
     struct bpb_t bpb;
     uint16_t sector_count;
     uint16_t head_count;
-}
+};
 
 int bios_disk_init(void);
-uint16_t bios_disk_read(int drive_number, uint16_t start, uint16_t count, void far *dta);
-uint16_t bios_disk_write(int drive_number, uint16_t start, uint16_t count, void far *dta);
-struct disk_change_t bios_disk_change(int drive_number);
-uint16_t bios_disk_build_bpb(int drive_number, struct bpb_t *bpb);
+bool bios_disk_read(int, uint16_t *, uint16_t, uint16_t, void far *);
+bool bios_disk_write(int, uint16_t *, uint16_t, uint16_t, void far *);
+bool bios_disk_change(int, union disk_change_t *);
+bool bios_disk_build_bpb(int, uint16_t *, struct bpb_t *);
 
 #endif
