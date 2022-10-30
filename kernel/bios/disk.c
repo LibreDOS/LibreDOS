@@ -101,11 +101,19 @@ static unsigned int read_write_sectors(unsigned int operation, struct drive_t *d
 
     if (virtual_drive && drive->bios_number == drives[0].bios_number) {
         if (*DISK_FLAG != drive - drives) {
+            uint16_t flags = 0;
             kputs("\r\nInsert disk for drive ");
             kputchar('A' + (drive - drives));
             kputs(": and press any key when ready\r\n");
-            bios_flush();
-            bios_getchar();
+            do {
+                bios_flush();
+                bios_getchar();
+                if (drive->type != floppy_swap_detect) break;
+                asm volatile ("int $0x13\n"
+                              "pushf\n"
+                              "popw %%ax" : "=a" (flags) : "a" (0x1600), "d" (drive->bios_number), "S" (0));
+            } while (!(flags & 1));
+            asm volatile ("int $0x13" :: "a" (0), "d" (drive->bios_number) : "cc");
             *DISK_FLAG = drive - drives;
         }
     }
@@ -251,13 +259,13 @@ bool bios_disk_change(int drive_number, union disk_change_t *result) {
         result->change_status = changed;
     else if (drive->bios_number >= 0x80 || drive->type == hard_drive)
         result->change_status = didnt_change;
-    else if (drive->type == floppy_no_detect || (virtual_drive && drive->bios_number == drives[0].bios_number)) {
+    else if (drive->type == floppy_no_detect) {
         result->change_status = dont_know;
     } else {
-        uint16_t flags;
+        uint16_t status, flags;
         asm volatile ("int $0x13\n"
                       "pushf\n"
-                      "popw %%ax" : "=a" (flags) : "a" (0x1600), "d" (drive->bios_number), "S" (0));
+                      "popw %%bx" : "=a" (status), "=b" (flags) : "a" (0x1600), "d" (drive->bios_number), "S" (0));
         if (flags & 1) {
             asm volatile ("int $0x13" :: "a" (0), "d" (drive->bios_number) : "cc");
             result->change_status = changed;
@@ -311,7 +319,7 @@ bool bios_disk_build_bpb(int drive_number, uint16_t *error_code, struct bpb_t *b
     else if (bpb->root_entries & 0x0F)
         valid_bpb = false;
     else if (bpb->sector_count <= (bpb->root_entries >> 4) + bpb->sectors_per_fat * bpb->fat_count + bpb->reserved_sectors)
-        valid_bpb = false;
+        valid_bpb = false; /* TODO: this is for partitions less than 32 MB in size */
     else if (bpb->media_descriptor < 0xF0)
         valid_bpb = false;
     /* check for DOS 3.0 BPB */
@@ -355,6 +363,7 @@ bool bios_disk_build_bpb(int drive_number, uint16_t *error_code, struct bpb_t *b
     } else if (drive->bios_number < 0x80 && (!valid_bpb30 || !valid_bpb))
         return convert_error(0x80,error_code,partition);
     partition->valid = true;
+    drive_streak = partition->drive_number;
     return true;
 }
 

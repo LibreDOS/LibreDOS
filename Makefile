@@ -26,7 +26,7 @@ $(FLOPPY_IMAGE):
 	$(MAKE) -C bootsect
 	-sudo umount -d floppy_root
 	rm -f $(FLOPPY_IMAGE)
-	mkdosfs -C $(FLOPPY_IMAGE) -n LIBREDOS 360
+	mkdosfs -C $(FLOPPY_IMAGE) -n LIBREDOS 1440
 	dd if=bootsect/bootsect.bin of=$(FLOPPY_IMAGE) bs=1 count=11 conv=notrunc
 	dd if=bootsect/bootsect.bin of=$(FLOPPY_IMAGE) bs=1 count=450 seek=62 skip=62 conv=notrunc
 	rm -rf floppy_root
