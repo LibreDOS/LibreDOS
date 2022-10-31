@@ -5,7 +5,7 @@ extern divide_error
 extern disk_read
 extern disk_write
 
-extern abort
+extern abort_program
 extern getchar_echo
 extern getchar_echo
 extern putchar
@@ -135,8 +135,10 @@ disk_dispatch:
     mov sp, dsk_stack
     sti ; interrupts can happen now
     call [temp_vector]
+    cmp ax, 1 ; set carry flag according to result
     call restore_frame
-    iret
+    sti ; don't return with iret, leave the flags on the stack
+    retf
 
 create_frame:
     pop word [cs:temp_vector]
@@ -209,7 +211,7 @@ section .rodata
 
 ; function dispatch table
 dispatch_table:
-    dw abort
+    dw abort_program
     dw getchar_echo, putchar, aux_getchar, aux_putchar
     dw prn_putchar, direct_io, direct_input, getchar_no_echo
     dw puts, gets, con_status, con_flush

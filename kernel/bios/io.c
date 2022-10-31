@@ -1,6 +1,8 @@
 #include <stdint.h>
 #include <ptrdef.h>
 #include <bios/io.h>
+#include <api/chario.h>
+#include <lib/klib.h>
 
 static unsigned int com_ports;
 static unsigned int lpt_ports;
@@ -13,7 +15,11 @@ void bios_init(void) {
     asm ("int $0x11" : "=a" (equipment));
     com_ports = (equipment >> 9) & 7;
     lpt_ports = (equipment >> 14) & 3;
-    /* intialize every serial port to 2400 baud 8N1 */
+    kprn_ul(com_ports);
+    kputs(" serial ports\r\n");
+    kprn_ul(lpt_ports);
+    kputs(" parallel ports\r\n");
+    /* initialize every serial port to 2400 baud 8N1 */
     for (i=0; i < com_ports; i++)
         asm volatile ("int $0x14" :: "a" (0x00A3), "d" (i));
     for (i=0; i < lpt_ports; i++)
@@ -59,7 +65,7 @@ unsigned int bios_status(void) {
 
     asm volatile ("int $0x16\n"
                   "pushf\n"
-                  "popw %%bx" : "=a" (ret), "=b" (flags) : "a" (0x0100));
+                  "popw %%bx" : "=a" (ret), "=b" (flags) : "a" (0x0100) : "cc");
     /* check zero flag */
     if (flags & 0x0040)
         return 0;

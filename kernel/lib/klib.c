@@ -52,16 +52,26 @@ void kprn_x(unsigned long x) {
     return;
 }
 
+uint16_t kread_hex(const char *buf, unsigned int *i) {
+    uint16_t result = 0;
+    char c = buf[(*i)++];
+    while ((c >= '0' && c <= '9') || (c >= 'a' && c <= 'f')) {
+        result = (result << 4) + (c < 'a' ? c - '0' : c - 'a' + 10);
+        c = buf[(*i)++];
+    }
+    return result;
+}
+
 void kpanic(char *str) {
     kputs(str);
     asm volatile ("cli");
     for (;;);
 }
 
-void *knmemcpy(void *dest, void *src, unsigned int count) {
+void *knmemcpy(void *dest, const void *src, unsigned int count) {
     unsigned int i;
     char *destptr = dest;
-    char *srcptr = src;
+    const char *srcptr = src;
 
     for (i=0; i < count; i++)
         destptr[i] = srcptr[i];
@@ -69,10 +79,10 @@ void *knmemcpy(void *dest, void *src, unsigned int count) {
     return dest;
 }
 
-void far *kfmemcpy(void far *dest, void far *src, unsigned long count) {
+void far *kfmemcpy(void far *dest, const void far *src, unsigned long count) {
     unsigned int i,j;
     char far *destptr = dest;
-    char far *srcptr = src;
+    const char far *srcptr = src;
 
     for (i = 0; i < (count >> 16); i++) {
         j = 0;

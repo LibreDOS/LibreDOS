@@ -5,7 +5,7 @@
 
 #define far __far
 #define SEGMENTOF(x) ((segment_t)((uintfar_t)(x) >> 16))
-#define OFFSETOF(x) ((uintptr_t)((x) & 0xFFFF))
+#define OFFSETOF(x) ((uintptr_t)((uintfar_t)(x) & 0xFFFF))
 #define FARPTR(x,y) ((void far *)(((uintfar_t)(x) << 16) + (y)))
 #define PARA(x) (((x) & 0xF) == 0 ? (x)>>4 : ((x)>>4) + 1)
 
